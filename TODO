@@ -1,0 +1,261 @@
+# RelayFlow TODO
+
+## Phase 0：项目初始化
+
+- [ ] 初始化 Go 项目结构
+  - [ ] 创建 `cmd/gateway`
+  - [ ] 创建 `cmd/worker`
+  - [ ] 创建 `internal/config`
+  - [ ] 创建 `internal/http`
+  - [ ] 创建 `internal/queue`
+  - [ ] 创建 `internal/store`
+  - [ ] 创建 `internal/worker`
+  - [ ] 创建 `examples/fastapi-agent`
+
+- [ ] 添加基础配置文件
+  - [ ] 支持从环境变量读取配置
+  - [ ] 支持配置 RabbitMQ 地址
+  - [ ] 支持配置 Redis 地址
+  - [ ] 支持配置 Agent HTTP 地址
+  - [ ] 支持配置任务超时时间
+
+- [ ] 添加 Docker Compose
+  - [ ] 启动 RabbitMQ
+  - [ ] 启动 Redis
+  - [ ] 启动 Gateway
+  - [ ] 启动 Worker
+  - [ ] 启动 FastAPI Agent Demo
+
+## Phase 1：最小可用任务流
+
+- [ ] 实现 FastAPI Agent Demo
+  - [ ] 提供 `POST /invoke`
+  - [ ] 接收 `run_id` 和 `input`
+  - [ ] 返回固定测试结果
+  - [ ] 支持模拟慢响应
+
+- [ ] 实现 Gateway 健康检查
+  - [ ] `GET /healthz`
+  - [ ] `GET /readyz`
+
+- [ ] 实现任务提交接口
+  - [ ] `POST /v1/runs`
+  - [ ] 生成 `run_id`
+  - [ ] 返回 `queued` 状态
+  - [ ] 将任务消息发送到 RabbitMQ task exchange
+
+- [ ] 实现 Worker 消费任务
+  - [ ] 连接 RabbitMQ
+  - [ ] 消费任务消息
+  - [ ] 调用 FastAPI Agent `POST /invoke`
+  - [ ] 打印 Agent 返回结果
+  - [ ] 成功后 ACK 消息
+
+- [ ] 完成第一条端到端链路
+  - [ ] 前端或 curl 提交任务
+  - [ ] Gateway 入队
+  - [ ] Worker 消费
+  - [ ] Worker 调用 Agent
+  - [ ] Worker ACK 消息
+
+## Phase 2：Redis 状态存储
+
+- [ ] 定义 run 状态
+  - [ ] `queued`
+  - [ ] `running`
+  - [ ] `succeeded`
+  - [ ] `failed`
+  - [ ] `timeout`
+
+- [ ] Gateway 提交任务时写入 Redis
+  - [ ] `run:{run_id}:status`
+  - [ ] `run:{run_id}:created_at`
+
+- [ ] Worker 执行任务时发布结果事件到 RabbitMQ event exchange
+  - [ ] `running`
+  - [ ] `succeeded`
+  - [ ] `failed`
+
+- [ ] Gateway Event Consumer 消费事件
+  - [ ] 监听 RabbitMQ event exchange
+  - [ ] 将状态写入 Redis
+  - [ ] 将最终结果写入 Redis
+
+- [ ] 实现任务查询接口
+  - [ ] `GET /v1/runs/{run_id}`
+  - [ ] 从 Redis 读取状态
+  - [ ] 成功时返回结果
+  - [ ] 失败时返回错误信息
+
+## Phase 3：SSE 任务进度推送
+
+- [ ] 实现 SSE 接口
+  - [ ] `GET /v1/runs/{run_id}/events`
+  - [ ] 设置 `text/event-stream`
+  - [ ] 推送 `queued`
+  - [ ] 推送 `running`
+  - [ ] 推送 `succeeded`
+  - [ ] 推送 `failed`
+
+- [ ] 为每个 SSE 连接创建 RabbitMQ 临时队列
+  - [ ] 使用 exclusive queue
+  - [ ] 使用 auto-delete queue
+  - [ ] 按 `run_id` 绑定 event exchange
+
+- [ ] 实现 SSE 心跳
+  - [ ] 每 15 秒发送一次 `: ping`
+  - [ ] 防止连接被代理层关闭
+
+- [ ] 实现 SSE 断开清理
+  - [ ] 监听 `request.Context().Done()`
+  - [ ] 取消 RabbitMQ consumer
+  - [ ] 关闭 RabbitMQ channel
+  - [ ] 停止 heartbeat ticker
+
+- [ ] 验证无明显协程泄露
+  - [ ] 建立多个 SSE 连接
+  - [ ] 主动断开连接
+  - [ ] 观察 goroutine 数量是否回落
+
+## Phase 4：幂等控制
+
+- [ ] 支持 `Idempotency-Key` 请求头
+  - [ ] `POST /v1/runs` 读取该请求头
+  - [ ] 没有传时允许正常创建任务
+
+- [ ] 实现 Redis 幂等记录
+  - [ ] key 格式：`idem:{idempotency_key}`
+  - [ ] value：`run_id`
+  - [ ] 使用 `SET NX EX`
+
+- [ ] 处理重复请求
+  - [ ] 第一次请求创建任务
+  - [ ] 重复请求直接返回已有 `run_id`
+  - [ ] 不重复投递 RabbitMQ 消息
+
+- [ ] 增加幂等测试
+  - [ ] 同一个 key 连续请求多次
+  - [ ] 验证只创建一个任务
+  - [ ] 验证只投递一次消息
+
+## Phase 5：Agent 超时与失败处理
+
+- [ ] Worker 调用 Agent 时加 timeout
+  - [ ] 使用 `context.WithTimeout`
+  - [ ] 超时时发布 `timeout` 事件
+  - [ ] 超时后 NACK 或进入重试流程
+
+- [ ] FastAPI Agent Demo 支持故障模拟
+  - [ ] `mode=normal`
+  - [ ] `mode=slow`
+  - [ ] `mode=fail`
+  - [ ] `mode=timeout`
+
+- [ ] 区分可重试错误和不可重试错误
+  - [ ] 网络错误可重试
+  - [ ] Agent 5xx 可重试
+  - [ ] Agent 4xx 不重试
+  - [ ] 参数错误不重试
+
+## Phase 6：重试与死信队列
+
+- [ ] 定义最大重试次数
+  - [ ] 默认 `max_attempts=3`
+
+- [ ] 在任务消息中记录 attempt
+  - [ ] 第一次为 `1`
+  - [ ] 每次重试递增
+
+- [ ] 实现失败重试
+  - [ ] 失败后重新投递任务
+  - [ ] 记录当前 attempt
+  - [ ] 超过最大次数后不再重试
+
+- [ ] 实现死信队列
+  - [ ] 创建 `agent.dlq`
+  - [ ] 超过最大重试次数后发送到 DLQ
+  - [ ] 发布 `dead_letter` 事件
+  - [ ] Redis 记录最终失败状态
+
+- [ ] 验证重试链路
+  - [ ] Agent 返回 500
+  - [ ] Worker 重试 3 次
+  - [ ] 最终进入 DLQ
+
+## Phase 7：结果缓存
+
+- [ ] 在请求体中支持 `cacheable`
+  - [ ] 默认 `false`
+  - [ ] 只有 `true` 时才启用结果缓存
+
+- [ ] 生成请求摘要
+  - [ ] 基于 `agent_id`
+  - [ ] 基于 `input`
+  - [ ] 基于必要配置
+
+- [ ] 查询 Redis 缓存
+  - [ ] key 格式：`cache:{request_hash}`
+  - [ ] 命中时直接返回结果
+  - [ ] 不投递任务到 RabbitMQ
+
+- [ ] 写入 Redis 缓存
+  - [ ] Worker 完成任务后通过事件返回结果
+  - [ ] Gateway Event Consumer 判断是否需要缓存
+  - [ ] 将成功结果写入缓存
+
+- [ ] 验证缓存效果
+  - [ ] 第一次请求正常执行
+  - [ ] 第二次请求命中缓存
+  - [ ] 验证 Agent 没有被重复调用
+
+## Phase 8：可观测性
+
+- [ ] 接入 Prometheus
+  - [ ] 暴露 `GET /metrics`
+  - [ ] 记录任务提交总数
+  - [ ] 记录任务成功总数
+  - [ ] 记录任务失败总数
+  - [ ] 记录 SSE 当前连接数
+  - [ ] 记录 SSE 断开次数
+  - [ ] 记录 Worker 当前处理任务数
+
+- [ ] 增加 Go runtime 指标
+  - [ ] goroutine 数量
+  - [ ] 内存占用
+  - [ ] GC 指标
+
+- [ ] 接入 OpenTelemetry
+  - [ ] Gateway 创建 trace
+  - [ ] RabbitMQ 消息携带 trace id
+  - [ ] Worker 继续 trace
+  - [ ] Agent HTTP 调用创建 span
+
+## Phase 9：压测与验证
+
+- [ ] 编写 SSE 压测脚本
+  - [ ] 建立 1000 个 SSE 连接
+  - [ ] 建立 5000 个 SSE 连接
+  - [ ] 建立 10000 个 SSE 连接
+  - [ ] 随机断开连接
+  - [ ] 记录 goroutine 是否回落
+
+- [ ] 编写任务提交压测脚本
+  - [ ] 并发提交任务
+  - [ ] 统计 `POST /v1/runs` P95 延迟
+  - [ ] 统计任务成功率
+  - [ ] 统计队列堆积长度
+
+- [ ] 编写故障注入测试
+  - [ ] Agent 慢响应
+  - [ ] Agent 返回 500
+  - [ ] Agent 超时
+  - [ ] Worker 进程中断
+  - [ ] Redis 短暂不可用
+  - [ ] RabbitMQ 短暂不可用
+
+- [ ] 输出压测结果文档
+  - [ ] 测试环境
+  - [ ] 测试方法
+  - [ ] 测试数据
+  - [ ] 瓶颈分析
+  - [ ] 后续优化方向
