@@ -10,7 +10,7 @@
   - [ 1] 创建 `internal/queue`
   - [ 1] 创建 `internal/store`
   - [ 1] 创建 `internal/worker`
-  - [ 1] 创建 `examples/fastapi-agent`
+  - [ 1] 创建 `examples/fastapi-agent`并添加相应测试Agent
 
 - [ 1] 添加基础配置文件
   - [ 1] 支持从环境变量读取配置
@@ -19,12 +19,12 @@
   - [ 1] 支持配置 Agent HTTP 地址
   - [ 1] 支持配置任务超时时间
 
-- [ ] 添加 Docker Compose
-  - [ ] 启动 RabbitMQ
-  - [ ] 启动 Redis
-  - [ ] 启动 Gateway
-  - [ ] 启动 Worker
-  - [ ] 启动 FastAPI Agent Demo
+- [ 1] 添加 Docker Compose
+  - [ 1] 启动 RabbitMQ
+  - [ 1] 启动 Redis
+  - [ 1] 启动 Gateway
+  - [ 1] 启动 Worker
+  - [ 1] 启动 FastAPI Agent Demo
 
 ## Phase 1：最小可用任务流
 
