@@ -47,10 +47,10 @@ services:
       args:
         APP: gateway
     environment:
-      RELAYFLOW_RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      RELAYFLOW_REDIS_ADDR: redis:6379
-      RELAYFLOW_AGENT_URL: http://fastapi-agent:8000
-      RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS:-30}
+      RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
+      RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
+      RELAYFLOW_AGENT_URL: ${RELAYFLOW_AGENT_URL}
+      RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -65,10 +65,10 @@ services:
       args:
         APP: worker
     environment:
-      RELAYFLOW_RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      RELAYFLOW_REDIS_ADDR: redis:6379
-      RELAYFLOW_AGENT_URL: http://fastapi-agent:8000
-      RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS:-30}
+      RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
+      RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
+      RELAYFLOW_AGENT_URL: ${RELAYFLOW_AGENT_URL}
+      RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS}
     depends_on:
       rabbitmq:
         condition: service_healthy
