@@ -2,22 +2,22 @@
 
 ## Phase 0：项目初始化
 
-- [ ] 初始化 Go 项目结构
-  - [ ] 创建 `cmd/gateway`
-  - [ ] 创建 `cmd/worker`
-  - [ ] 创建 `internal/config`
-  - [ ] 创建 `internal/http`
-  - [ ] 创建 `internal/queue`
-  - [ ] 创建 `internal/store`
-  - [ ] 创建 `internal/worker`
-  - [ ] 创建 `examples/fastapi-agent`
+- [ 1] 初始化 Go 项目结构
+  - [ 1] 创建 `cmd/gateway`
+  - [ 1] 创建 `cmd/worker`
+  - [ 1] 创建 `internal/config`
+  - [ 1] 创建 `internal/http`
+  - [ 1] 创建 `internal/queue`
+  - [ 1] 创建 `internal/store`
+  - [ 1] 创建 `internal/worker`
+  - [ 1] 创建 `examples/fastapi-agent`
 
-- [ ] 添加基础配置文件
-  - [ ] 支持从环境变量读取配置
-  - [ ] 支持配置 RabbitMQ 地址
-  - [ ] 支持配置 Redis 地址
-  - [ ] 支持配置 Agent HTTP 地址
-  - [ ] 支持配置任务超时时间
+- [ 1] 添加基础配置文件
+  - [ 1] 支持从环境变量读取配置
+  - [ 1] 支持配置 RabbitMQ 地址
+  - [ 1] 支持配置 Redis 地址
+  - [ 1] 支持配置 Agent HTTP 地址
+  - [ 1] 支持配置任务超时时间
 
 - [ ] 添加 Docker Compose
   - [ ] 启动 RabbitMQ
