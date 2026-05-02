@@ -1,25 +1,32 @@
 package main
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
+	"os"
 
 	"relay-flow/internal/config"
+	"relay-flow/internal/logger"
 )
 
 // Gateway 负责接收外部 HTTP/SSE 请求，并把任务投递到后端队列。
 func main() {
-	// 统一从环境变量加载配置，便于本地、Docker 和生产环境复用同一份代码。
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("load config: %v", err)
+	if err := logger.Init("gateway"); err != nil {
+		slog.Error("init logger failed", "err", err)
+		os.Exit(1)
 	}
 
-	// Phase 0 先验证进程启动和配置读取，后续再接入 HTTP Server、Redis 和 RabbitMQ。
-	fmt.Printf("Gateway started with RabbitMQ=%s Redis=%s Agent=%s TaskTimeout=%s\n",
-		cfg.RabbitMQURL,
-		cfg.RedisAddr,
-		cfg.AgentURL,
-		cfg.TaskTimeout,
+	// 加载config环境变量
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("load config failed", "err", err)
+		os.Exit(1)
+	}
+
+	// 打印环境变量
+	slog.Info("gateway started",
+		"rabbitmq", cfg.RabbitMQURL,
+		"redis", cfg.RedisAddr,
+		"agent", cfg.AgentURL,
+		"task_timeout", cfg.TaskTimeout,
 	)
 }
