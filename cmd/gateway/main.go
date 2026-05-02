@@ -2,9 +2,11 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 
 	"relay-flow/internal/config"
+	gatewayhttp "relay-flow/internal/http"
 	"relay-flow/internal/logger"
 )
 
@@ -27,6 +29,19 @@ func main() {
 		"rabbitmq", cfg.RabbitMQURL,
 		"redis", cfg.RedisAddr,
 		"agent", cfg.AgentURL,
+		"addr", cfg.GatewayAddr,
 		"task_timeout", cfg.TaskTimeout,
 	)
+
+	server := gatewayhttp.NewServer()
+	httpServer := &http.Server{
+		Addr:    cfg.GatewayAddr,
+		Handler: server.Handler(),
+	}
+
+	slog.Info("gateway http server listening", "addr", cfg.GatewayAddr)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Error("gateway http server failed", "err", err)
+		os.Exit(1)
+	}
 }

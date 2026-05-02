@@ -6,10 +6,13 @@ services:
         APP: gateway
     volumes:
       - ./logs:/app/logs
+    ports:
+      - "8080:8080"
     environment:
       RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
       RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
       RELAYFLOW_AGENT_URL: ${RELAYFLOW_AGENT_URL}
+      RELAYFLOW_GATEWAY_ADDR: ${RELAYFLOW_GATEWAY_ADDR}
       RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS}
 
   worker:

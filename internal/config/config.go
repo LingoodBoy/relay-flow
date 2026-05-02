@@ -12,6 +12,7 @@ const (
 	defaultRabbitMQURL       = "amqp://guest:guest@localhost:5672/"
 	defaultRedisAddr         = "localhost:6379"
 	defaultAgentHTTPURL      = "http://localhost:8000"
+	defaultGatewayAddr       = ":8080"
 	defaultTaskTimeoutSecond = 30
 )
 
@@ -20,6 +21,7 @@ type Config struct {
 	RabbitMQURL string
 	RedisAddr   string
 	AgentURL    string
+	GatewayAddr string
 	TaskTimeout time.Duration
 }
 
@@ -35,6 +37,7 @@ func Load() (Config, error) {
 		RabbitMQURL: getEnv("RELAYFLOW_RABBITMQ_URL", defaultRabbitMQURL),
 		RedisAddr:   getEnv("RELAYFLOW_REDIS_ADDR", defaultRedisAddr),
 		AgentURL:    getEnv("RELAYFLOW_AGENT_URL", defaultAgentHTTPURL),
+		GatewayAddr: getEnv("RELAYFLOW_GATEWAY_ADDR", defaultGatewayAddr),
 		TaskTimeout: time.Duration(taskTimeoutSeconds) * time.Second,
 	}, nil
 }
