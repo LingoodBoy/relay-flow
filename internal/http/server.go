@@ -1,12 +1,11 @@
 package http
 
 import (
-	"fmt"
-	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"relay-flow/internal/logger"
 )
 
 // Server 封装 Gateway 的 HTTP 路由。
@@ -21,8 +20,8 @@ func NewServer() *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
-	router.Use(requestLogger())
-	router.Use(recoveryWithSlog())
+	router.Use(logger.GinRequestLogger())
+	router.Use(logger.GinRecovery())
 
 	server := &Server{router: router}
 	server.registerRoutes()
@@ -47,27 +46,4 @@ func (s *Server) handleReadyz(c *gin.Context) {
 	// readyz 表示 Gateway 已完成自身初始化，可以接收流量。
 	// Redis/RabbitMQ 接入后，这里会扩展为真实依赖检查。
 	c.JSON(http.StatusOK, gin.H{"status": "ready"})
-}
-
-func requestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-
-		slog.Info("http request",
-			"method", c.Request.Method,
-			"path", c.FullPath(),
-			"status", c.Writer.Status(),
-			"ip", c.ClientIP(),
-			"latency", time.Since(start),
-			"size", c.Writer.Size(),
-		)
-	}
-}
-
-func recoveryWithSlog() gin.HandlerFunc {
-	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
-		slog.Error("http panic recovered", "panic", fmt.Sprint(recovered))
-		c.AbortWithStatus(http.StatusInternalServerError)
-	})
 }
