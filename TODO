@@ -28,11 +28,11 @@
 
 ## Phase 1：最小可用任务流
 
-- [ ] 实现 FastAPI Agent Demo
-  - [ ] 提供 `POST /invoke`
-  - [ ] 接收 `run_id` 和 `input`
-  - [ ] 返回固定测试结果
-  - [ ] 支持模拟慢响应
+- [ 1] 实现 FastAPI Agent Demo
+  - [ 1] 提供 `POST /invoke`
+  - [ 1] 接收 `run_id` 和 `input`
+  - [ 1] 返回固定测试结果
+  - [ 1] 支持模拟慢响应
 
 - [ ] 实现 Gateway 健康检查
   - [ ] `GET /healthz`
