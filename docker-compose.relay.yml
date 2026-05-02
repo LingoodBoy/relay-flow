@@ -4,6 +4,8 @@ services:
       context: .
       args:
         APP: gateway
+    volumes:
+      - ./logs:/app/logs
     environment:
       RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
       RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
@@ -15,6 +17,8 @@ services:
       context: .
       args:
         APP: worker
+    volumes:
+      - ./logs:/app/logs
     environment:
       RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
       RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
