@@ -56,3 +56,13 @@ Frontend
 针对 SSE 长连接可能导致的协程泄露和资源泄露问题，设计连接生命周期治理机制。SSE Handler 基于 request.Context() 感知客户端断开，主动释放 RabbitMQ consumer、临时队列、channel 和 heartbeat ticker；同时通过 Prometheus 采集 go_goroutines、relayflow_sse_connections、relayflow_sse_disconnect_total 等指标。压测中将通过随机断开 1 万个 SSE 连接，验证 goroutine 数量是否能在短时间内回落至基线水平。
 
 针对系统可观测性不足的问题，引入 Prometheus + OpenTelemetry，采集任务提交量、任务成功率、失败率、重试次数、DLQ 数量、SSE 连接数、队列堆积长度、Agent 调用耗时等指标，并通过 Trace 串联 Gateway 入队、Worker 消费、Agent 调用和事件推送链路，便于定位慢请求和失败节点。
+
+# 快速开始
+docker compose -f docker-compose.infra.yml up -d
+docker compose -f docker-compose.agent.yml up -d --build
+docker compose -f docker-compose.relay.yml up -d --build
+
+# 停止
+docker compose -f docker-compose.relay.yml down
+docker compose -f docker-compose.agent.yml down
+docker compose -f docker-compose.infra.yml down

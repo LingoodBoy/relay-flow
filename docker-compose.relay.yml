@@ -1,0 +1,22 @@
+services:
+  gateway:
+    build:
+      context: .
+      args:
+        APP: gateway
+    environment:
+      RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
+      RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
+      RELAYFLOW_AGENT_URL: ${RELAYFLOW_AGENT_URL}
+      RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS}
+
+  worker:
+    build:
+      context: .
+      args:
+        APP: worker
+    environment:
+      RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
+      RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}
+      RELAYFLOW_AGENT_URL: ${RELAYFLOW_AGENT_URL}
+      RELAYFLOW_TASK_TIMEOUT_SECONDS: ${RELAYFLOW_TASK_TIMEOUT_SECONDS}
