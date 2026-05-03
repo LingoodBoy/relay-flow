@@ -6,6 +6,8 @@ services:
         APP: gateway
     volumes:
       - ./logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     environment:
@@ -22,6 +24,8 @@ services:
         APP: worker
     volumes:
       - ./logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       RELAYFLOW_RABBITMQ_URL: ${RELAYFLOW_RABBITMQ_URL}
       RELAYFLOW_REDIS_ADDR: ${RELAYFLOW_REDIS_ADDR}

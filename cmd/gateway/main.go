@@ -8,6 +8,7 @@ import (
 	"relay-flow/internal/config"
 	gatewayhttp "relay-flow/internal/http"
 	"relay-flow/internal/logger"
+	"relay-flow/internal/queue"
 )
 
 // Gateway 负责接收外部 HTTP/SSE 请求，并把任务投递到后端队列。
@@ -32,6 +33,11 @@ func main() {
 		"addr", cfg.GatewayAddr,
 		"task_timeout", cfg.TaskTimeout,
 	)
+
+	if err := queue.DeclareTaskTopology(cfg.RabbitMQURL); err != nil {
+		slog.Error("declare rabbitmq task topology failed", "err", err)
+		os.Exit(1)
+	}
 
 	server := gatewayhttp.NewServer()
 	httpServer := &http.Server{
