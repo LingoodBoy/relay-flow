@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	gatewayhttp "relay-flow/internal/http"
 	"relay-flow/internal/logger"
 	"relay-flow/internal/queue"
+	"relay-flow/internal/store"
 )
 
 // Gateway 负责接收外部 HTTP/SSE 请求，并把任务投递到后端队列。
@@ -39,7 +41,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := gatewayhttp.NewServer()
+	runStore := store.NewRedisStore(cfg.RedisAddr)
+	defer runStore.Close()
+	if err := runStore.Ping(context.Background()); err != nil {
+		slog.Error("connect redis failed", "err", err)
+		os.Exit(1)
+	}
+
+	taskPublisher, err := queue.NewPublisher(cfg.RabbitMQURL)
+	if err != nil {
+		slog.Error("create task publisher failed", "err", err)
+		os.Exit(1)
+	}
+	defer taskPublisher.Close()
+
+	server := gatewayhttp.NewServer(gatewayhttp.Dependencies{
+		Store:     runStore,
+		Publisher: taskPublisher,
+	})
 	httpServer := &http.Server{
 		Addr:    cfg.GatewayAddr,
 		Handler: server.Handler(),

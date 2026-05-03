@@ -38,13 +38,13 @@
   - [x] 创建 `relayflow.task.queue`
   - [x] 将 queue 绑定到 exchange
 
-- [ ] 实现任务提交接口
-  - [ ] `POST /v1/runs`
-  - [ ] 解析 `agent_id`、`input`、`cacheable`
-  - [ ] 生成 `run_id`
-  - [ ] 写入 Redis 初始状态 `queued`
-  - [ ] 发布 task message 到 RabbitMQ
-  - [ ] 返回 `run_id` 和 `queued`
+- [x] 实现任务提交接口
+  - [x] `POST /v1/runs`
+  - [x] 解析 `agent_id`、`input`、`cacheable`
+  - [x] 生成 `run_id`
+  - [x] 写入 Redis 初始状态 `queued`
+  - [x] 发布 task message 到 RabbitMQ
+  - [x] 返回 `run_id` 和 `queued`
 
 - [ ] 实现 Worker 基础消费
   - [ ] 连接 RabbitMQ
