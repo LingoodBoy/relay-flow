@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"relay-flow/internal/config"
 	gatewayhttp "relay-flow/internal/http"
@@ -36,18 +37,23 @@ func main() {
 		"task_timeout", cfg.TaskTimeout,
 	)
 
+	// 声明mq task相关初始化操作
 	if err := queue.DeclareTaskTopology(cfg.RabbitMQURL); err != nil {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
 		os.Exit(1)
 	}
 
+	// 初始化redis
 	runStore := store.NewRedisStore(cfg.RedisAddr)
 	defer runStore.Close()
-	if err := runStore.Ping(context.Background()); err != nil {
+	ctxRedis, cancelRedis := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancelRedis()
+	if err := runStore.Ping(ctxRedis); err != nil {
 		slog.Error("connect redis failed", "err", err)
 		os.Exit(1)
 	}
 
+	// 初始化mq生产者
 	taskPublisher, err := queue.NewPublisher(cfg.RabbitMQURL)
 	if err != nil {
 		slog.Error("create task publisher failed", "err", err)
