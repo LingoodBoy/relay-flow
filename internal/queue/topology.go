@@ -35,7 +35,7 @@ func DeclareTaskTopology(rabbitMQURL string) error {
 	}
 	defer ch.Close()
 
-	if err := declareTaskTopology(ch); err != nil {
+	if err := declareTaskTopologyWithChannel(ch); err != nil {
 		return err
 	}
 
@@ -47,7 +47,7 @@ func DeclareTaskTopology(rabbitMQURL string) error {
 	return nil
 }
 
-func declareTaskTopology(ch *amqp.Channel) error {
+func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 	if err := ch.ExchangeDeclare(
 		TaskExchange,
 		"direct",
