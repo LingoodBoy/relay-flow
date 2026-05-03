@@ -6,6 +6,7 @@ import (
 
 	"relay-flow/internal/config"
 	"relay-flow/internal/logger"
+	"relay-flow/internal/queue"
 )
 
 // Worker 负责消费队列任务、调用 Agent 服务，并回传执行状态。
@@ -29,4 +30,9 @@ func main() {
 		"agent", cfg.AgentURL,
 		"task_timeout", cfg.TaskTimeout,
 	)
+
+	if err := queue.DeclareTaskTopology(cfg.RabbitMQURL); err != nil {
+		slog.Error("declare rabbitmq task topology failed", "err", err)
+		os.Exit(1)
+	}
 }

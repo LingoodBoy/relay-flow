@@ -1,254 +1,319 @@
-# RelayFlow TODO
-
+# TODO
 ## Phase 0：项目初始化
 
-- [ 1] 初始化 Go 项目结构
-  - [ 1] 创建 `cmd/gateway`
-  - [ 1] 创建 `cmd/worker`
-  - [ 1] 创建 `internal/config`
-  - [ 1] 创建 `internal/http`
-  - [ 1] 创建 `internal/queue`
-  - [ 1] 创建 `internal/store`
-  - [ 1] 创建 `internal/worker`
-  - [ 1] 创建 `examples/fastapi-agent`并添加相应测试Agent
+- [x] 初始化 Go 项目结构
+  - [x] 创建 `cmd/gateway`
+  - [x] 创建 `cmd/worker`
+  - [x] 创建 `internal/config`
+  - [x] 创建 `internal/http`
+  - [x] 创建 `internal/queue`
+  - [x] 创建 `internal/store`
+  - [x] 创建 `internal/worker`
+  - [x] 创建 `examples/fastapi-agent`
 
-- [ 1] 添加基础配置文件
-  - [ 1] 支持从环境变量读取配置
-  - [ 1] 支持配置 RabbitMQ 地址
-  - [ 1] 支持配置 Redis 地址
-  - [ 1] 支持配置 Agent HTTP 地址
-  - [ 1] 支持配置任务超时时间
+- [x] 添加基础配置
+  - [x] 从环境变量读取配置
+  - [x] 配置 RabbitMQ 地址
+  - [x] 配置 Redis 地址
+  - [x] 配置 Agent HTTP 地址
+  - [x] 配置任务超时时间
 
-- [ 1] 添加 Docker Compose
-  - [ 1] 启动 RabbitMQ
-  - [ 1] 启动 Redis
-  - [ 1] 启动 Gateway
-  - [ 1] 启动 Worker
-  - [ 1] 启动 FastAPI Agent Demo
+- [x] 添加 Docker Compose
+  - [x] 启动 RabbitMQ
+  - [x] 启动 Redis
+  - [x] 启动 Gateway
+  - [x] 启动 Worker
+  - [x] 启动 FastAPI Agent Demo
 
-- [ 1] 引入slog
-  - [ 1] 实现json格式化
-  - [ 1] 实现日志分割
-  - [ 1] 实现GIN的全局handler消息/错误处理
+- [x] 引入日志
+  - [x] 使用 `slog`
+  - [x] 输出 JSON 日志
+  - [x] 支持日志分割
+  - [x] 添加 Gin 全局请求日志与错误处理 middleware
 
-## Phase 1：最小可用任务流
+## Phase 1：最小任务链路
 
-- [ 1] 实现 FastAPI Agent Demo
-  - [ 1] 提供 `POST /invoke`
-  - [ 1] 接收 `run_id` 和 `input`
-  - [ 1] 返回固定测试结果
-  - [ 1] 支持模拟慢响应
-
-- [ 1] 实现 Gateway 健康检查
-  - [ 1] `GET /healthz`
-  - [ 1] `GET /readyz`
+- [x] 实现 RabbitMQ task exchange / queue 声明
+  - [x] 创建 `relayflow.task.exchange`
+  - [x] 创建 `relayflow.task.queue`
+  - [x] 将 queue 绑定到 exchange
 
 - [ ] 实现任务提交接口
   - [ ] `POST /v1/runs`
+  - [ ] 解析 `agent_id`、`input`、`cacheable`
   - [ ] 生成 `run_id`
-  - [ ] 返回 `queued` 状态
-  - [ ] 将任务消息发送到 RabbitMQ task exchange
+  - [ ] 写入 Redis 初始状态 `queued`
+  - [ ] 发布 task message 到 RabbitMQ
+  - [ ] 返回 `run_id` 和 `queued`
 
-- [ ] 实现 Worker 消费任务
+- [ ] 实现 Worker 基础消费
   - [ ] 连接 RabbitMQ
-  - [ ] 消费任务消息
+  - [ ] 消费 `relayflow.task.queue`
   - [ ] 调用 FastAPI Agent `POST /invoke`
-  - [ ] 打印 Agent 返回结果
-  - [ ] 成功后 ACK 消息
+  - [ ] 成功后 ACK
+  - [ ] 失败时记录日志
 
-- [ ] 完成第一条端到端链路
-  - [ ] 前端或 curl 提交任务
+- [ ] 跑通第一条链路
+  - [ ] curl 提交任务
   - [ ] Gateway 入队
   - [ ] Worker 消费
   - [ ] Worker 调用 Agent
-  - [ ] Worker ACK 消息
+  - [ ] Worker ACK
 
-## Phase 2：Redis 状态存储
+## Phase 2：事件模型与状态存储
 
-- [ ] 定义 run 状态
-  - [ ] `queued`
-  - [ ] `running`
-  - [ ] `succeeded`
-  - [ ] `failed`
-  - [ ] `timeout`
+- [ ] 定义统一事件结构 `RunEvent`
+  - [ ] `run_id`
+  - [ ] `seq`
+  - [ ] `type`
+  - [ ] `message`
+  - [ ] `payload`
+  - [ ] `created_at`
 
-- [ ] Gateway 提交任务时写入 Redis
-  - [ ] `run:{run_id}:status`
-  - [ ] `run:{run_id}:created_at`
+- [ ] 实现 RabbitMQ event exchange
+  - [ ] 创建 `relayflow.event.exchange`
+  - [ ] 使用 topic exchange
+  - [ ] routing key 格式：`run.{run_id}.event`
 
-- [ ] Worker 执行任务时发布结果事件到 RabbitMQ event exchange
-  - [ ] `running`
-  - [ ] `succeeded`
-  - [ ] `failed`
+- [ ] Worker 发布基础事件
+  - [ ] 开始执行时发布 `running`
+  - [ ] 成功时发布 `succeeded`
+  - [ ] 失败时发布 `failed`
 
 - [ ] Gateway Event Consumer 消费事件
-  - [ ] 监听 RabbitMQ event exchange
-  - [ ] 将状态写入 Redis
-  - [ ] 将最终结果写入 Redis
+  - [ ] 创建 `relayflow.event.persist.queue`
+  - [ ] 绑定 `relayflow.event.exchange`
+  - [ ] 消费所有 run event
+  - [ ] 将事件追加到 `run:{run_id}:events`
+  - [ ] 更新 `run:{run_id}:status`
+  - [ ] 成功时写入 `run:{run_id}:result`
+  - [ ] 失败时写入 `run:{run_id}:error`
 
 - [ ] 实现任务查询接口
   - [ ] `GET /v1/runs/{run_id}`
-  - [ ] 从 Redis 读取状态
-  - [ ] 成功时返回结果
-  - [ ] 失败时返回错误信息
+  - [ ] 返回状态
+  - [ ] 返回最终结果
+  - [ ] 返回错误信息
+  - [ ] 可选返回最近 N 条事件
 
-## Phase 3：SSE 任务进度推送
+## Phase 3：Agent 阶段事件支持
+
+- [ ] 扩展 FastAPI Agent Demo
+  - [ ] 保留 `POST /invoke`
+  - [ ] 新增 `POST /invoke/events`
+  - [ ] 支持输出阶段事件
+  - [ ] 模拟 `tool_use`
+  - [ ] 模拟 `tool_result`
+  - [ ] 模拟 `progress`
+  - [ ] 最后输出 `succeeded`
+
+- [ ] 实现 Worker Agent Client
+  - [ ] 支持普通 invoke
+  - [ ] 支持事件流 invoke
+  - [ ] 根据配置选择调用 `/invoke` 或 `/invoke/events`
+
+- [ ] 实现 Worker Event Adapter
+  - [ ] 读取 Agent 原始事件
+  - [ ] 转换为 RelayFlow 标准事件
+  - [ ] 为事件生成递增 `seq`
+  - [ ] 过滤空事件
+  - [ ] 控制事件频率，避免高频 token 进入 MQ
+
+- [ ] 验证阶段事件链路
+  - [ ] Agent 输出工具调用事件
+  - [ ] Worker 标准化事件
+  - [ ] RabbitMQ event exchange 收到事件
+  - [ ] Redis 保存事件历史
+  - [ ] `GET /v1/runs/{id}` 可查看事件
+
+## Phase 4：SSE 进度推送
 
 - [ ] 实现 SSE 接口
   - [ ] `GET /v1/runs/{run_id}/events`
-  - [ ] 设置 `text/event-stream`
-  - [ ] 推送 `queued`
-  - [ ] 推送 `running`
-  - [ ] 推送 `succeeded`
-  - [ ] 推送 `failed`
+  - [ ] 设置 `Content-Type: text/event-stream`
+  - [ ] 连接建立后先推送 Redis 中已有事件
+  - [ ] 再订阅实时 RabbitMQ 事件
 
-- [ ] 为每个 SSE 连接创建 RabbitMQ 临时队列
-  - [ ] 使用 exclusive queue
-  - [ ] 使用 auto-delete queue
-  - [ ] 按 `run_id` 绑定 event exchange
+- [ ] 为 SSE 连接创建临时队列
+  - [ ] queue 使用 exclusive
+  - [ ] queue 使用 auto-delete
+  - [ ] 按 `run_id` 绑定 routing key
+
+- [ ] 推送标准事件
+  - [ ] `running`
+  - [ ] `progress`
+  - [ ] `tool_use`
+  - [ ] `tool_result`
+  - [ ] `succeeded`
+  - [ ] `failed`
 
 - [ ] 实现 SSE 心跳
-  - [ ] 每 15 秒发送一次 `: ping`
-  - [ ] 防止连接被代理层关闭
+  - [ ] 每 15 秒发送 `: ping`
+  - [ ] 写失败时立即退出
 
-- [ ] 实现 SSE 断开清理
+- [ ] 实现连接清理
   - [ ] 监听 `request.Context().Done()`
-  - [ ] 取消 RabbitMQ consumer
+  - [ ] cancel RabbitMQ consumer
+  - [ ] 删除或关闭临时队列
   - [ ] 关闭 RabbitMQ channel
   - [ ] 停止 heartbeat ticker
 
-- [ ] 验证无明显协程泄露
-  - [ ] 建立多个 SSE 连接
-  - [ ] 主动断开连接
-  - [ ] 观察 goroutine 数量是否回落
+## Phase 5：Worker 并发控制
 
-## Phase 4：幂等控制
+- [ ] 增加 Worker 并发配置
+  - [ ] `WORKER_CONCURRENCY=20`
 
-- [ ] 支持 `Idempotency-Key` 请求头
-  - [ ] `POST /v1/runs` 读取该请求头
-  - [ ] 没有传时允许正常创建任务
+- [ ] 实现 Worker Pool
+  - [ ] 同时最多处理 N 个任务
+  - [ ] 超过并发上限的任务留在 RabbitMQ
+  - [ ] 处理完成后释放执行名额
 
-- [ ] 实现 Redis 幂等记录
-  - [ ] key 格式：`idem:{idempotency_key}`
+- [ ] 验证执行层限并发
+  - [ ] Agent 模拟 5s 慢响应
+  - [ ] 并发提交 100 个任务
+  - [ ] 验证 Agent 同时执行数不超过配置值
+
+## Phase 6：幂等控制
+
+- [ ] 支持 `Idempotency-Key`
+  - [ ] `POST /v1/runs` 读取请求头
+  - [ ] 未传时正常创建任务
+
+- [ ] 实现 Redis 幂等写入
+  - [ ] key：`idem:{idempotency_key}`
   - [ ] value：`run_id`
   - [ ] 使用 `SET NX EX`
 
 - [ ] 处理重复请求
   - [ ] 第一次请求创建任务
-  - [ ] 重复请求直接返回已有 `run_id`
-  - [ ] 不重复投递 RabbitMQ 消息
+  - [ ] 重复请求返回已有 `run_id`
+  - [ ] 不重复投递 RabbitMQ
 
-- [ ] 增加幂等测试
-  - [ ] 同一个 key 连续请求多次
-  - [ ] 验证只创建一个任务
-  - [ ] 验证只投递一次消息
+- [ ] 增加幂等验证
+  - [ ] 同一个 key 请求多次
+  - [ ] 验证只生成一个 run
+  - [ ] 验证只投递一次 task message
 
-## Phase 5：Agent 超时与失败处理
+## Phase 7：超时、重试与 DLQ
 
-- [ ] Worker 调用 Agent 时加 timeout
+- [ ] Worker 调用 Agent 增加 timeout
   - [ ] 使用 `context.WithTimeout`
-  - [ ] 超时时发布 `timeout` 事件
-  - [ ] 超时后 NACK 或进入重试流程
+  - [ ] 超时发布 `timeout` 事件
+  - [ ] 超时进入重试流程
 
-- [ ] FastAPI Agent Demo 支持故障模拟
+- [ ] FastAPI Agent Demo 支持故障模式
   - [ ] `mode=normal`
   - [ ] `mode=slow`
   - [ ] `mode=fail`
   - [ ] `mode=timeout`
 
-- [ ] 区分可重试错误和不可重试错误
+- [ ] 定义错误分类
   - [ ] 网络错误可重试
   - [ ] Agent 5xx 可重试
   - [ ] Agent 4xx 不重试
   - [ ] 参数错误不重试
 
-## Phase 6：重试与死信队列
-
-- [ ] 定义最大重试次数
+- [ ] 实现最大重试次数
   - [ ] 默认 `max_attempts=3`
-
-- [ ] 在任务消息中记录 attempt
-  - [ ] 第一次为 `1`
+  - [ ] task message 携带 `attempt`
   - [ ] 每次重试递增
 
-- [ ] 实现失败重试
-  - [ ] 失败后重新投递任务
-  - [ ] 记录当前 attempt
-  - [ ] 超过最大次数后不再重试
+- [ ] 实现 retry queue
+  - [ ] 失败后延迟重试
+  - [ ] 发布 `retrying` 事件
+  - [ ] 超过最大次数后进入 DLQ
 
 - [ ] 实现死信队列
-  - [ ] 创建 `agent.dlq`
-  - [ ] 超过最大重试次数后发送到 DLQ
+  - [ ] 创建 `relayflow.dlq`
   - [ ] 发布 `dead_letter` 事件
-  - [ ] Redis 记录最终失败状态
+  - [ ] Redis 记录最终状态 `dead_letter`
 
-- [ ] 验证重试链路
-  - [ ] Agent 返回 500
-  - [ ] Worker 重试 3 次
-  - [ ] 最终进入 DLQ
+## Phase 8：结果缓存
 
-## Phase 7：结果缓存
-
-- [ ] 在请求体中支持 `cacheable`
+- [ ] 请求体支持 `cacheable`
   - [ ] 默认 `false`
-  - [ ] 只有 `true` 时才启用结果缓存
+  - [ ] 只有 `true` 才启用缓存
 
 - [ ] 生成请求摘要
   - [ ] 基于 `agent_id`
   - [ ] 基于 `input`
-  - [ ] 基于必要配置
+  - [ ] 基于 Agent 配置版本
 
-- [ ] 查询 Redis 缓存
-  - [ ] key 格式：`cache:{request_hash}`
-  - [ ] 命中时直接返回结果
-  - [ ] 不投递任务到 RabbitMQ
+- [ ] Gateway 查询缓存
+  - [ ] key：`cache:{request_hash}`
+  - [ ] 命中时直接返回 cached result
+  - [ ] 不投递 RabbitMQ
 
-- [ ] 写入 Redis 缓存
-  - [ ] Worker 完成任务后通过事件返回结果
-  - [ ] Gateway Event Consumer 判断是否需要缓存
-  - [ ] 将成功结果写入缓存
+- [ ] 任务消息携带缓存信息
+  - [ ] `cacheable`
+  - [ ] `cache_key`
 
-- [ ] 验证缓存效果
+- [ ] Gateway Event Consumer 写入缓存
+  - [ ] 只缓存 `succeeded`
+  - [ ] 只缓存 `cacheable=true`
+  - [ ] 写入 TTL
+
+- [ ] 验证缓存
   - [ ] 第一次请求正常执行
   - [ ] 第二次请求命中缓存
-  - [ ] 验证 Agent 没有被重复调用
+  - [ ] Agent 调用次数不增加
 
-## Phase 8：可观测性
+## Phase 9：可观测性
 
 - [ ] 接入 Prometheus
   - [ ] 暴露 `GET /metrics`
-  - [ ] 记录任务提交总数
-  - [ ] 记录任务成功总数
-  - [ ] 记录任务失败总数
-  - [ ] 记录 SSE 当前连接数
-  - [ ] 记录 SSE 断开次数
-  - [ ] 记录 Worker 当前处理任务数
+  - [ ] 任务提交总数
+  - [ ] 任务成功总数
+  - [ ] 任务失败总数
+  - [ ] 重试次数
+  - [ ] DLQ 数量
+  - [ ] SSE 当前连接数
+  - [ ] SSE 断开次数
+  - [ ] Worker 当前执行任务数
+  - [ ] RabbitMQ 队列堆积长度
 
-- [ ] 增加 Go runtime 指标
+- [ ] 接入 Go runtime 指标
   - [ ] goroutine 数量
   - [ ] 内存占用
   - [ ] GC 指标
 
 - [ ] 接入 OpenTelemetry
   - [ ] Gateway 创建 trace
-  - [ ] RabbitMQ 消息携带 trace id
-  - [ ] Worker 继续 trace
+  - [ ] task message 携带 trace id
+  - [ ] Worker 延续 trace
   - [ ] Agent HTTP 调用创建 span
+  - [ ] event publish 创建 span
 
-## Phase 9：压测与验证
+## Phase 10：SSE 协程泄露验证
 
 - [ ] 编写 SSE 压测脚本
   - [ ] 建立 1000 个 SSE 连接
   - [ ] 建立 5000 个 SSE 连接
   - [ ] 建立 10000 个 SSE 连接
-  - [ ] 随机断开连接
-  - [ ] 记录 goroutine 是否回落
 
-- [ ] 编写任务提交压测脚本
+- [ ] 编写随机断开测试
+  - [ ] 随机关闭 SSE 连接
+  - [ ] 记录断开前 goroutine 数量
+  - [ ] 记录断开后 goroutine 数量
+  - [ ] 验证 goroutine 回落
+
+- [ ] 验证 RabbitMQ 资源释放
+  - [ ] 临时队列自动删除
+  - [ ] consumer 被 cancel
+  - [ ] channel 被关闭
+
+## Phase 11：压测与故障注入
+
+- [ ] 编写任务提交压测
   - [ ] 并发提交任务
   - [ ] 统计 `POST /v1/runs` P95 延迟
   - [ ] 统计任务成功率
   - [ ] 统计队列堆积长度
+
+- [ ] 编写 Worker 限并发压测
+  - [ ] Agent 平均响应 5s
+  - [ ] Worker 并发设置为 20
+  - [ ] 验证 Agent 最大并发不超过 20
 
 - [ ] 编写故障注入测试
   - [ ] Agent 慢响应
@@ -258,9 +323,29 @@
   - [ ] Redis 短暂不可用
   - [ ] RabbitMQ 短暂不可用
 
-- [ ] 输出压测结果文档
+- [ ] 输出压测文档
   - [ ] 测试环境
   - [ ] 测试方法
   - [ ] 测试数据
   - [ ] 瓶颈分析
   - [ ] 后续优化方向
+
+## Phase 12：可选 Realtime Stream 模式
+
+- [ ] 新增 `POST /v1/stream`
+  - [ ] Gateway 直接调用 Agent stream endpoint
+  - [ ] 不经过 RabbitMQ
+  - [ ] 直接将 Agent token stream 转发给前端
+
+- [ ] 增加 stream 并发控制
+  - [ ] 每个 Agent 配置最大 stream 并发
+  - [ ] 超过并发上限返回 429 或排队等待短时间
+
+- [ ] 增加 stream 超时控制
+  - [ ] 首 token 超时
+  - [ ] 总响应超时
+  - [ ] 客户端断开后取消上游请求
+
+- [ ] 明确两种模式边界
+  - [ ] `/v1/runs`：可靠异步任务，支持阶段事件、重试、DLQ
+  - [ ] `/v1/stream`：实时吐字反代，低延迟，不保证后台任务可靠完成
