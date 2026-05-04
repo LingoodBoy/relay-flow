@@ -134,10 +134,16 @@
   - [ ] 连接建立后先推送 Redis 中已有事件
   - [ ] 再订阅实时 RabbitMQ 事件
 
-- [ ] 为 SSE 连接创建临时队列
-  - [ ] queue 使用 exclusive
-  - [ ] queue 使用 auto-delete
-  - [ ] 按 `run_id` 绑定 routing key
+- [ ] 实现 Gateway SSE Hub
+  - [ ] 按 run_id 管理订阅者
+  - [ ] 每个连接使用小 buffer channel
+  - [ ] 慢客户端 buffer 满时主动断开
+  - [ ] 连接断开后自动 unregister
+
+- [ ] Gateway Event Consumer 分发事件
+  - [ ] 消费 RabbitMQ event exchange
+  - [ ] 写入 Redis 事件历史
+  - [ ] 推送到本机 SSE Hub
 
 - [ ] 推送标准事件
   - [ ] `running`

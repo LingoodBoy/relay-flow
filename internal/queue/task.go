@@ -27,6 +27,8 @@ type Publisher struct {
 }
 
 // NewPublisher 创建 RabbitMQ 任务发布器，并在 Gateway 生命周期内复用连接。
+// TODO
+// 当前阶段 Gateway 复用一个 AMQP connection/channel 发布任务，避免每次请求都重新建连接。
 func NewPublisher(rabbitMQURL string) (*Publisher, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
