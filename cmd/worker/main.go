@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
 	"relay-flow/internal/config"
 	"relay-flow/internal/logger"
 	"relay-flow/internal/queue"
+	workerpkg "relay-flow/internal/worker"
 )
 
 // Worker 负责消费队列任务、调用 Agent 服务，并回传执行状态。
@@ -23,7 +25,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Phase 0 先验证进程启动和配置读取，后续再接入 RabbitMQ consumer 和 Agent client。
 	slog.Info("worker started",
 		"rabbitmq", cfg.RabbitMQURL,
 		"redis", cfg.RedisAddr,
@@ -31,8 +32,24 @@ func main() {
 		"task_timeout", cfg.TaskTimeout,
 	)
 
+	// Worker 也声明拓扑是为了支持独立部署：即使 Gateway 暂时没启动，Worker 也能自检队列结构。
+	// RabbitMQ 声明是幂等的，参数一致时不会覆盖已有 exchange/queue/message。
 	if err := queue.DeclareTaskTopology(cfg.RabbitMQURL); err != nil {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
+		os.Exit(1)
+	}
+
+	// AgentClient 只关心黑盒 Agent 的 HTTP 协议；Worker 不解析 Agent 的业务输入。
+	agentClient := workerpkg.NewAgentClient(cfg.AgentURL, cfg.TaskTimeout)
+	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient)
+	if err != nil {
+		slog.Error("create worker consumer failed", "err", err)
+		os.Exit(1)
+	}
+	defer consumer.Close()
+
+	if err := consumer.Run(context.Background()); err != nil {
+		slog.Error("worker consumer stopped", "err", err)
 		os.Exit(1)
 	}
 }

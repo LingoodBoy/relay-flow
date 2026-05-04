@@ -26,6 +26,7 @@ type Publisher struct {
 	ch   *amqp.Channel
 }
 
+// NewPublisher 创建 RabbitMQ 任务发布器，并在 Gateway 生命周期内复用连接。
 func NewPublisher(rabbitMQURL string) (*Publisher, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
@@ -41,6 +42,7 @@ func NewPublisher(rabbitMQURL string) (*Publisher, error) {
 	return &Publisher{conn: conn, ch: ch}, nil
 }
 
+// Close 关闭发布器持有的 channel 和 connection。
 func (p *Publisher) Close() error {
 	if p == nil {
 		return nil
@@ -54,6 +56,7 @@ func (p *Publisher) Close() error {
 	return nil
 }
 
+// PublishTask 把任务消息发布到 RabbitMQ task exchange。
 func (p *Publisher) PublishTask(ctx context.Context, task TaskMessage) error {
 	body, err := json.Marshal(task)
 	if err != nil {

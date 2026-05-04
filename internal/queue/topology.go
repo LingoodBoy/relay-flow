@@ -47,6 +47,7 @@ func DeclareTaskTopology(rabbitMQURL string) error {
 	return nil
 }
 
+// declareTaskTopologyWithChannel 在已有 AMQP channel 上声明任务拓扑。
 func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 	if err := ch.ExchangeDeclare(
 		TaskExchange,

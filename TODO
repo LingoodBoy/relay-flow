@@ -46,12 +46,12 @@
   - [x] 发布 task message 到 RabbitMQ
   - [x] 返回 `run_id` 和 `queued`
 
-- [ ] 实现 Worker 基础消费
-  - [ ] 连接 RabbitMQ
-  - [ ] 消费 `relayflow.task.queue`
-  - [ ] 调用 FastAPI Agent `POST /invoke`
-  - [ ] 成功后 ACK
-  - [ ] 失败时记录日志
+- [x] 实现 Worker 基础消费
+  - [x] 连接 RabbitMQ
+  - [x] 消费 `relayflow.task.queue`
+  - [x] 调用 FastAPI Agent `POST /invoke`
+  - [x] 成功后 ACK
+  - [x] 失败时记录日志
 
 - [ ] 跑通第一条链路
   - [ ] curl 提交任务
