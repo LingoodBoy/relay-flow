@@ -21,14 +21,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 加载config环境变量
+	// Gateway/Worker 读取同一套环境变量，保证本地、Docker、生产部署切换时只换配置不换代码。
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("load config failed", "err", err)
 		os.Exit(1)
 	}
 
-	// 打印环境变量
 	slog.Info("gateway started",
 		"rabbitmq", cfg.RabbitMQURL,
 		"redis", cfg.RedisAddr,
@@ -37,13 +36,13 @@ func main() {
 		"task_timeout", cfg.TaskTimeout,
 	)
 
-	// 声明mq task相关初始化操作
+	// 拓扑声明放在启动阶段：配置不一致会立刻失败，避免请求进来后才发现队列不可用。
 	if err := queue.DeclareTaskTopology(cfg.RabbitMQURL); err != nil {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
 		os.Exit(1)
 	}
 
-	// 初始化redis
+	// Redis 是 Run 状态的第一落点；启动时 Ping 一次，用 ready fail-fast 暴露依赖问题。
 	runStore := store.NewRedisStore(cfg.RedisAddr)
 	defer runStore.Close()
 	ctxRedis, cancelRedis := context.WithTimeout(context.Background(), 4*time.Second)
@@ -53,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 初始化mq生产者
+	// Publisher 持有 RabbitMQ 长连接，避免每个请求都重新建连接造成额外开销。
 	taskPublisher, err := queue.NewPublisher(cfg.RabbitMQURL)
 	if err != nil {
 		slog.Error("create task publisher failed", "err", err)
