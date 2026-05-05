@@ -56,6 +56,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	eventConsumer, err := queue.NewEventConsumer(cfg.RabbitMQURL, runStore)
+	if err != nil {
+		slog.Error("create event consumer failed", "err", err)
+		os.Exit(1)
+	}
+	defer eventConsumer.Close()
+	go func() {
+		if err := eventConsumer.Run(context.Background()); err != nil {
+			slog.Error("event consumer stopped", "err", err)
+		}
+	}()
+
 	// Publisher 持有 RabbitMQ 长连接，避免每个请求都重新建连接造成额外开销。
 	taskPublisher, err := queue.NewPublisher(cfg.RabbitMQURL)
 	if err != nil {

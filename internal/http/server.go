@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +28,7 @@ type Server struct {
 // RunStore 是 HTTP 层写入 Run 状态所需的最小接口。
 type RunStore interface {
 	CreateRunQueued(ctx context.Context, run store.RunRecord) error
+	GetRunDetail(ctx context.Context, runID string, eventsLimit int64) (store.RunDetail, error)
 }
 
 // TaskPublisher 是 HTTP 层发布异步任务所需的最小接口。
@@ -65,6 +68,7 @@ func (s *Server) registerRoutes() {
 	s.router.GET("/healthz", s.handleHealthz)
 	s.router.GET("/readyz", s.handleReadyz)
 	s.router.POST("/v1/runs", s.handleCreateRun)
+	s.router.GET("/v1/runs/:run_id", s.handleGetRun)
 }
 
 // handleHealthz 返回进程存活状态，不检查外部依赖。
@@ -147,6 +151,37 @@ func (s *Server) handleCreateRun(c *gin.Context) {
 	})
 }
 
+// handleGetRun 查询 Run 当前状态、最终结果和最近事件。
+func (s *Server) handleGetRun(c *gin.Context) {
+	runID := c.Param("run_id")
+	if runID == "" {
+		err := fmt.Errorf("run_id is required")
+		_ = c.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	eventsLimit, err := parseEventsLimit(c.Query("events_limit"))
+	if err != nil {
+		_ = c.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	detail, err := s.store.GetRunDetail(c.Request.Context(), runID, eventsLimit)
+	if err != nil {
+		if errors.Is(err, store.ErrRunNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+			return
+		}
+		_ = c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, detail)
+}
+
 // newRunID 生成带 run_ 前缀的随机 ID，方便日志和 Redis key 排查。
 func newRunID() (string, error) {
 	var b [16]byte
@@ -154,4 +189,23 @@ func newRunID() (string, error) {
 		return "", fmt.Errorf("read random bytes: %w", err)
 	}
 	return "run_" + hex.EncodeToString(b[:]), nil
+}
+
+// parseEventsLimit 解析最近事件数量，默认不返回事件。
+func parseEventsLimit(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+
+	limit, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("events_limit must be an integer")
+	}
+	if limit < 0 {
+		return 0, fmt.Errorf("events_limit must be greater than or equal to 0")
+	}
+	if limit > 100 {
+		return 0, fmt.Errorf("events_limit must be less than or equal to 100")
+	}
+	return limit, nil
 }

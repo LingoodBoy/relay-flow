@@ -80,21 +80,21 @@
   - [x] 成功时发布 `succeeded`
   - [x] 失败时发布 `failed`
 
-- [ ] Gateway Event Consumer 消费事件
-  - [ ] 创建 `relayflow.event.persist.queue`
-  - [ ] 绑定 `relayflow.event.exchange`
-  - [ ] 消费所有 run event
-  - [ ] 将事件追加到 `run:{run_id}:events`
-  - [ ] 更新 `run:{run_id}:status`
-  - [ ] 成功时写入 `run:{run_id}:result`
-  - [ ] 失败时写入 `run:{run_id}:error`
+- [x] Gateway Event Consumer 消费事件
+  - [x] 创建 `relayflow.event.persist.queue`
+  - [x] 绑定 `relayflow.event.exchange`
+  - [x] 消费所有 run event
+  - [x] 将事件追加到 `run:{run_id}:events`
+  - [x] 更新 `run:{run_id}:status`
+  - [x] 成功时写入 `run:{run_id}:result`
+  - [x] 失败时写入 `run:{run_id}:error`
 
-- [ ] 实现任务查询接口
-  - [ ] `GET /v1/runs/{run_id}`
-  - [ ] 返回状态
-  - [ ] 返回最终结果
-  - [ ] 返回错误信息
-  - [ ] 可选返回最近 N 条事件
+- [x] 实现任务查询接口
+  - [x] `GET /v1/runs/{run_id}`
+  - [x] 返回状态
+  - [x] 返回最终结果
+  - [x] 返回错误信息
+  - [x] 可选返回最近 N 条事件
 
 ## Phase 3：Agent 阶段事件支持
 
@@ -116,8 +116,6 @@
   - [ ] 读取 Agent 原始事件
   - [ ] 转换为 RelayFlow 标准事件
   - [ ] 为事件生成递增 `seq`
-  - [ ] 过滤空事件
-  - [ ] 控制事件频率，避免高频 token 进入 MQ
 
 - [ ] 验证阶段事件链路
   - [ ] Agent 输出工具调用事件
