@@ -30,11 +30,11 @@ func NewAgentClient(baseURL string, timeout time.Duration) *AgentClient {
 }
 
 // Invoke 调用 Agent 的 POST /invoke 接口并返回原始响应体。
+// run_id 属于 RelayFlow 内部调度 ID，不传给黑盒 Agent，避免 Agent 被迫理解系统追踪字段。
 func (c *AgentClient) Invoke(ctx context.Context, task queue.TaskMessage) ([]byte, error) {
 	// RelayFlow 透传 input，不关心 Agent 的业务 schema；这样 Gateway/Worker 可以服务不同 Agent。
 	body, err := json.Marshal(map[string]any{
-		"run_id": task.RunID,
-		"input":  json.RawMessage(task.Input),
+		"input": json.RawMessage(task.Input),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal agent request: %w", err)

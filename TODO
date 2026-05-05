@@ -100,17 +100,17 @@
 
 > `/v1/runs` 主线只处理阶段事件，不处理 token 逐字流。Agent 原始流里如果包含 token delta，由 Worker Event Adapter 过滤；需要实时吐字时走 Phase 12 的可选 Realtime Stream 模式。
 
-- [ ] 扩展 FastAPI Agent Demo 为三种 Agent 事件源
-  - [ ] OpenAI Agents SDK 风格事件源
-  - [ ] Claude Agent SDK 风格事件源
-  - [ ] 自定义 LangGraph Agent 风格事件源
-  - [ ] 保留 `POST /invoke`
-  - [ ] 新增 `POST /invoke/events`
-  - [ ] 只输出阶段事件，不输出 token 逐字流
-  - [ ] 模拟 `tool_use`
-  - [ ] 模拟 `tool_result`
-  - [ ] 模拟 `progress`
-  - [ ] 最后输出 `succeeded`
+- [x] 扩展 FastAPI Agent Demo 为三种真实 Agent 事件源
+  - [x] OpenAI Agents SDK 事件源
+  - [x] Claude Agent SDK 事件源
+  - [x] 自定义 LangGraph Agent 事件源
+  - [x] 保留 `POST /invoke`
+  - [x] 新增 `POST /invoke/events`
+  - [x] 只输出阶段事件，不输出 token 逐字流
+  - [x] 输出 `tool_use`
+  - [x] 输出 `tool_result`
+  - [x] 输出 `progress`
+  - [x] 最后输出 `succeeded`
 
 - [ ] 实现 Worker Agent Client
   - [ ] 支持普通 invoke
