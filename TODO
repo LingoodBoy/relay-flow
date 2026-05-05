@@ -53,22 +53,22 @@
   - [x] 成功后 ACK
   - [x] 失败时记录日志
 
-- [ ] 跑通第一条链路
-  - [ ] curl 提交任务
-  - [ ] Gateway 入队
-  - [ ] Worker 消费
-  - [ ] Worker 调用 Agent
-  - [ ] Worker ACK
+- [x] 跑通第一条链路
+  - [x] curl 提交任务
+  - [x] Gateway 入队
+  - [x] Worker 消费
+  - [x] Worker 调用 Agent
+  - [x] Worker ACK
 
 ## Phase 2：事件模型与状态存储
 
-- [ ] 定义统一事件结构 `RunEvent`
-  - [ ] `run_id`
-  - [ ] `seq`
-  - [ ] `type`
-  - [ ] `message`
-  - [ ] `payload`
-  - [ ] `created_at`
+- [x] 定义统一事件结构 `RunEvent`
+  - [x] `run_id`
+  - [x] `seq`
+  - [x] `type`
+  - [x] `message`
+  - [x] `payload`
+  - [x] `created_at`
 
 - [ ] 实现 RabbitMQ event exchange
   - [ ] 创建 `relayflow.event.exchange`
