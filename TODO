@@ -70,10 +70,10 @@
   - [x] `payload`
   - [x] `created_at`
 
-- [ ] 实现 RabbitMQ event exchange
-  - [ ] 创建 `relayflow.event.exchange`
-  - [ ] 使用 topic exchange
-  - [ ] routing key 格式：`run.{run_id}.event`
+- [x] 实现 RabbitMQ event exchange
+  - [x] 创建 `relayflow.event.exchange`
+  - [x] 使用 topic exchange
+  - [x] routing key 格式：`run.{run_id}.event`
 
 - [ ] Worker 发布基础事件
   - [ ] 开始执行时发布 `running`

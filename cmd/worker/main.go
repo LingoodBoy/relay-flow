@@ -38,6 +38,10 @@ func main() {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
 		os.Exit(1)
 	}
+	if err := queue.DeclareEventTopology(cfg.RabbitMQURL); err != nil {
+		slog.Error("declare rabbitmq event topology failed", "err", err)
+		os.Exit(1)
+	}
 
 	// AgentClient 只关心黑盒 Agent 的 HTTP 协议；Worker 不解析 Agent 的业务输入。
 	agentClient := workerpkg.NewAgentClient(cfg.AgentURL, cfg.TaskTimeout)
