@@ -5,20 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"relay-flow/internal/event"
 	"relay-flow/internal/queue"
 )
 
 type Consumer struct {
-	conn        *amqp.Connection
-	ch          *amqp.Channel
-	agentClient *AgentClient
+	conn           *amqp.Connection
+	ch             *amqp.Channel
+	agentClient    *AgentClient
+	eventPublisher *queue.EventPublisher
 }
 
 // NewConsumer 创建 RabbitMQ 任务消费者，并持有消费用的长连接。
-func NewConsumer(rabbitMQURL string, agentClient *AgentClient) (*Consumer, error) {
+func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *queue.EventPublisher) (*Consumer, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("dial rabbitmq: %w", err)
@@ -31,9 +34,10 @@ func NewConsumer(rabbitMQURL string, agentClient *AgentClient) (*Consumer, error
 	}
 
 	return &Consumer{
-		conn:        conn,
-		ch:          ch,
-		agentClient: agentClient,
+		conn:           conn,
+		ch:             ch,
+		agentClient:    agentClient,
+		eventPublisher: eventPublisher,
 	}, nil
 }
 
@@ -94,19 +98,57 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 	}
 
 	slog.Info("task received", "run_id", task.RunID, "agent_id", task.AgentID)
+	if err := c.publishRunEvent(ctx, task.RunID, 1, event.EventTypeRunning, "任务开始执行", nil); err != nil {
+		slog.Error("publish running event failed", "run_id", task.RunID, "err", err)
+		_ = delivery.Nack(false, false)
+		return
+	}
+
 	result, err := c.agentClient.Invoke(ctx, task)
 	if err != nil {
 		// Phase 1 先丢弃失败消息；重试和死信队列后续单独设计，避免现在无限重放。
 		slog.Error("task execution failed", "run_id", task.RunID, "err", err)
+		if publishErr := c.publishFailedEvent(ctx, task.RunID, err); publishErr != nil {
+			slog.Error("publish failed event failed", "run_id", task.RunID, "err", publishErr)
+		}
 		_ = delivery.Nack(false, false)
 		return
 	}
 
 	slog.Info("task executed", "run_id", task.RunID, "agent_response", string(result))
+	if err := c.publishRunEvent(ctx, task.RunID, 2, event.EventTypeSucceeded, "任务执行成功", json.RawMessage(result)); err != nil {
+		slog.Error("publish succeeded event failed", "run_id", task.RunID, "err", err)
+		_ = delivery.Nack(false, false)
+		return
+	}
+
 	// 只有 Agent 成功返回后才 ACK，确保队列语义是“至少处理到 Agent 调用完成”。
 	if err := delivery.Ack(false); err != nil {
 		slog.Error("ack task failed", "run_id", task.RunID, "err", err)
 		return
 	}
 	slog.Info("task acked", "run_id", task.RunID)
+}
+
+// publishRunEvent 构造并发布 Worker 基础事件。
+func (c *Consumer) publishRunEvent(ctx context.Context, runID string, seq int64, eventType event.EventType, message string, payload json.RawMessage) error {
+	evt := event.RunEvent{
+		RunID:     runID,
+		Seq:       seq,
+		Type:      eventType,
+		Message:   message,
+		Payload:   payload,
+		CreatedAt: time.Now().UTC(),
+	}
+	return c.eventPublisher.PublishRunEvent(ctx, evt)
+}
+
+// publishFailedEvent 把错误信息包装成标准 failed 事件。
+func (c *Consumer) publishFailedEvent(ctx context.Context, runID string, err error) error {
+	payload, marshalErr := json.Marshal(map[string]string{"error": err.Error()})
+	if marshalErr != nil {
+		return fmt.Errorf("marshal failed event payload: %w", marshalErr)
+	}
+
+	return c.publishRunEvent(ctx, runID, 2, event.EventTypeFailed, "任务执行失败", payload)
 }

@@ -75,10 +75,10 @@
   - [x] 使用 topic exchange
   - [x] routing key 格式：`run.{run_id}.event`
 
-- [ ] Worker 发布基础事件
-  - [ ] 开始执行时发布 `running`
-  - [ ] 成功时发布 `succeeded`
-  - [ ] 失败时发布 `failed`
+- [x] Worker 发布基础事件
+  - [x] 开始执行时发布 `running`
+  - [x] 成功时发布 `succeeded`
+  - [x] 失败时发布 `failed`
 
 - [ ] Gateway Event Consumer 消费事件
   - [ ] 创建 `relayflow.event.persist.queue`
