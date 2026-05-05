@@ -16,7 +16,9 @@ const (
 	TaskQueue      = "relayflow.task.queue"
 	TaskRoutingKey = "relayflow.task"
 
-	EventExchange = "relayflow.event.exchange"
+	EventExchange         = "relayflow.event.exchange"
+	EventPersistQueue     = "relayflow.event.persist.queue"
+	EventAllRunRoutingKey = "run.#.event"
 )
 
 // DeclareTaskTopology 声明 RelayFlow 的任务交换机、任务队列和绑定关系。
@@ -50,7 +52,7 @@ func DeclareTaskTopology(rabbitMQURL string) error {
 	return nil
 }
 
-// DeclareEventTopology 声明 RelayFlow 的事件交换机。
+// DeclareEventTopology 声明 RelayFlow 的事件交换机和持久化队列。
 // 事件使用 topic exchange，后续可按 run_id 精确订阅，也可按通配符消费全部事件。
 func DeclareEventTopology(rabbitMQURL string) error {
 	conn, err := amqp.Dial(rabbitMQURL)
@@ -69,7 +71,11 @@ func DeclareEventTopology(rabbitMQURL string) error {
 		return err
 	}
 
-	slog.Info("rabbitmq event topology declared", "exchange", EventExchange)
+	slog.Info("rabbitmq event topology declared",
+		"exchange", EventExchange,
+		"persist_queue", EventPersistQueue,
+		"routing_key", EventAllRunRoutingKey,
+	)
 	return nil
 }
 
@@ -124,6 +130,28 @@ func declareEventTopologyWithChannel(ch *amqp.Channel) error {
 		nil,
 	); err != nil {
 		return fmt.Errorf("declare event exchange: %w", err)
+	}
+
+	if _, err := ch.QueueDeclare(
+		EventPersistQueue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("declare event persist queue: %w", err)
+	}
+
+	// 持久化队列绑定 run.#.event，用于消费所有 Run 的阶段事件并落 Redis。
+	if err := ch.QueueBind(
+		EventPersistQueue,
+		EventAllRunRoutingKey,
+		EventExchange,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("bind event persist queue: %w", err)
 	}
 
 	return nil
