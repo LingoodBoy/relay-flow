@@ -104,7 +104,7 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		return
 	}
 
-	result, err := c.agentClient.Invoke(ctx, task)
+	result, err := c.agentClient.InvokeEvents(ctx, task)
 	if err != nil {
 		// Phase 1 先丢弃失败消息；重试和死信队列后续单独设计，避免现在无限重放。
 		slog.Error("task execution failed", "run_id", task.RunID, "err", err)

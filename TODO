@@ -49,7 +49,7 @@
 - [x] 实现 Worker 基础消费
   - [x] 连接 RabbitMQ
   - [x] 消费 `relayflow.task.queue`
-  - [x] 调用 FastAPI Agent `POST /invoke`
+  - [x] 调用 FastAPI Agent `POST /invoke/events`
   - [x] 成功后 ACK
   - [x] 失败时记录日志
 
@@ -57,7 +57,7 @@
   - [x] curl 提交任务
   - [x] Gateway 入队
   - [x] Worker 消费
-  - [x] Worker 调用 Agent
+  - [x] Worker 调用 Agent 阶段事件接口
   - [x] Worker ACK
 
 ## Phase 2：事件模型与状态存储
@@ -112,15 +112,17 @@
   - [x] 输出 `progress`
   - [x] 最后输出 `succeeded`
 
-- [ ] 实现 Worker Agent Client
-  - [ ] 支持普通 invoke
-  - [ ] 支持事件流 invoke
-  - [ ] 根据配置选择调用 `/invoke` 或 `/invoke/events`
+- [x] 实现 Worker Agent Client
+  - [x] 固定调用 `POST /invoke/events`
+  - [x] 读取 Agent SSE 阶段事件
+  - [x] 不实现普通 `/invoke` 模式
 
 - [ ] 实现 Worker Event Adapter
   - [ ] 读取 Agent 原始事件
   - [ ] 转换为 RelayFlow 标准事件
+  - [ ] 补充 `run_id`
   - [ ] 为事件生成递增 `seq`
+  - [ ] 补充 `created_at`
   - [ ] 过滤 token delta / text delta
   - [ ] 只保留 `progress`、`tool_use`、`tool_result`、`succeeded`、`failed`
 
