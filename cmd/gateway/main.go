@@ -41,6 +41,10 @@ func main() {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
 		os.Exit(1)
 	}
+	if err := queue.DeclareEventTopology(cfg.RabbitMQURL); err != nil {
+		slog.Error("declare rabbitmq event topology failed", "err", err)
+		os.Exit(1)
+	}
 
 	// Redis 是 Run 状态的第一落点；启动时 Ping 一次，用 ready fail-fast 暴露依赖问题。
 	runStore := store.NewRedisStore(cfg.RedisAddr)

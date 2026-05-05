@@ -3,6 +3,7 @@ package queue
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -14,6 +15,8 @@ const (
 	TaskExchange   = "relayflow.task.exchange"
 	TaskQueue      = "relayflow.task.queue"
 	TaskRoutingKey = "relayflow.task"
+
+	EventExchange = "relayflow.event.exchange"
 )
 
 // DeclareTaskTopology 声明 RelayFlow 的任务交换机、任务队列和绑定关系。
@@ -44,6 +47,29 @@ func DeclareTaskTopology(rabbitMQURL string) error {
 		"queue", TaskQueue,
 		"routing_key", TaskRoutingKey,
 	)
+	return nil
+}
+
+// DeclareEventTopology 声明 RelayFlow 的事件交换机。
+// 事件使用 topic exchange，后续可按 run_id 精确订阅，也可按通配符消费全部事件。
+func DeclareEventTopology(rabbitMQURL string) error {
+	conn, err := amqp.Dial(rabbitMQURL)
+	if err != nil {
+		return fmt.Errorf("dial rabbitmq: %w", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("open rabbitmq channel: %w", err)
+	}
+	defer ch.Close()
+
+	if err := declareEventTopologyWithChannel(ch); err != nil {
+		return err
+	}
+
+	slog.Info("rabbitmq event topology declared", "exchange", EventExchange)
 	return nil
 }
 
@@ -84,4 +110,30 @@ func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 	}
 
 	return nil
+}
+
+// declareEventTopologyWithChannel 在已有 AMQP channel 上声明事件拓扑。
+func declareEventTopologyWithChannel(ch *amqp.Channel) error {
+	if err := ch.ExchangeDeclare(
+		EventExchange,
+		"topic",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("declare event exchange: %w", err)
+	}
+
+	return nil
+}
+
+// EventRoutingKey 返回某个 Run 对应的事件 routing key。
+func EventRoutingKey(runID string) string {
+	return fmt.Sprintf("run.%s.event", sanitizeRoutingKeyPart(runID))
+}
+
+func sanitizeRoutingKeyPart(value string) string {
+	return strings.NewReplacer(".", "_", "*", "_", "#", "_").Replace(value)
 }
