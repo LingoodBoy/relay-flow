@@ -98,10 +98,15 @@
 
 ## Phase 3：Agent 阶段事件支持
 
-- [ ] 扩展 FastAPI Agent Demo
+> `/v1/runs` 主线只处理阶段事件，不处理 token 逐字流。Agent 原始流里如果包含 token delta，由 Worker Event Adapter 过滤；需要实时吐字时走 Phase 12 的可选 Realtime Stream 模式。
+
+- [ ] 扩展 FastAPI Agent Demo 为三种 Agent 事件源
+  - [ ] OpenAI Agents SDK 风格事件源
+  - [ ] Claude Agent SDK 风格事件源
+  - [ ] 自定义 LangGraph Agent 风格事件源
   - [ ] 保留 `POST /invoke`
   - [ ] 新增 `POST /invoke/events`
-  - [ ] 支持输出阶段事件
+  - [ ] 只输出阶段事件，不输出 token 逐字流
   - [ ] 模拟 `tool_use`
   - [ ] 模拟 `tool_result`
   - [ ] 模拟 `progress`
@@ -116,6 +121,8 @@
   - [ ] 读取 Agent 原始事件
   - [ ] 转换为 RelayFlow 标准事件
   - [ ] 为事件生成递增 `seq`
+  - [ ] 过滤 token delta / text delta
+  - [ ] 只保留 `progress`、`tool_use`、`tool_result`、`succeeded`、`failed`
 
 - [ ] 验证阶段事件链路
   - [ ] Agent 输出工具调用事件
@@ -130,7 +137,7 @@
   - [ ] `GET /v1/runs/{run_id}/events`
   - [ ] 设置 `Content-Type: text/event-stream`
   - [ ] 连接建立后先推送 Redis 中已有事件
-  - [ ] 再订阅实时 RabbitMQ 事件
+  - [ ] 再订阅 Gateway SSE Hub 的实时事件
 
 - [ ] 实现 Gateway SSE Hub
   - [ ] 按 run_id 管理订阅者
@@ -139,8 +146,8 @@
   - [ ] 连接断开后自动 unregister
 
 - [ ] Gateway Event Consumer 分发事件
-  - [ ] 消费 RabbitMQ event exchange
-  - [ ] 写入 Redis 事件历史
+  - [ ] 复用 `relayflow.event.persist.queue` 消费事件
+  - [ ] 继续写入 Redis 事件历史
   - [ ] 推送到本机 SSE Hub
 
 - [ ] 推送标准事件
@@ -157,9 +164,8 @@
 
 - [ ] 实现连接清理
   - [ ] 监听 `request.Context().Done()`
-  - [ ] cancel RabbitMQ consumer
-  - [ ] 删除或关闭临时队列
-  - [ ] 关闭 RabbitMQ channel
+  - [ ] 从 Gateway SSE Hub unregister
+  - [ ] 关闭连接私有 buffer channel
   - [ ] 停止 heartbeat ticker
 
 ## Phase 5：Worker 并发控制
@@ -177,26 +183,22 @@
   - [ ] 并发提交 100 个任务
   - [ ] 验证 Agent 同时执行数不超过配置值
 
-## Phase 6：幂等控制
+## Phase 6：Redis 存储边界
 
-- [ ] 支持 `Idempotency-Key`
-  - [ ] `POST /v1/runs` 读取请求头
-  - [ ] 未传时正常创建任务
+- [ ] 明确 Redis 只做运行态持久化
+  - [ ] 保存 `run:{run_id}` 当前状态
+  - [ ] 保存 `run:{run_id}:events` 事件历史
+  - [ ] 保存 `run:{run_id}:result`
+  - [ ] 保存 `run:{run_id}:error`
 
-- [ ] 实现 Redis 幂等写入
-  - [ ] key：`idem:{idempotency_key}`
-  - [ ] value：`run_id`
-  - [ ] 使用 `SET NX EX`
+- [ ] 不实现 Redis 幂等控制
+  - [ ] 不读取 `Idempotency-Key`
+  - [ ] 不创建 `idem:{idempotency_key}`
+  - [ ] 不拦截重复请求
 
-- [ ] 处理重复请求
-  - [ ] 第一次请求创建任务
-  - [ ] 重复请求返回已有 `run_id`
-  - [ ] 不重复投递 RabbitMQ
-
-- [ ] 增加幂等验证
-  - [ ] 同一个 key 请求多次
-  - [ ] 验证只生成一个 run
-  - [ ] 验证只投递一次 task message
+- [ ] 文档说明重复提交语义
+  - [ ] 每次 `POST /v1/runs` 都创建新的 run
+  - [ ] 上游客户端或 Agent 自己处理业务幂等
 
 ## Phase 7：超时、重试与 DLQ
 
@@ -232,35 +234,22 @@
   - [ ] 发布 `dead_letter` 事件
   - [ ] Redis 记录最终状态 `dead_letter`
 
-## Phase 8：结果缓存
+## Phase 8：Agent 缓存边界与透传
 
-- [ ] 请求体支持 `cacheable`
-  - [ ] 默认 `false`
-  - [ ] 只有 `true` 才启用缓存
+- [ ] 明确 RelayFlow 不做结果缓存
+  - [ ] 不创建 `cache:{request_hash}`
+  - [ ] 不根据缓存命中短路任务投递
+  - [ ] 不在 Gateway Event Consumer 写缓存
 
-- [ ] 生成请求摘要
-  - [ ] 基于 `agent_id`
-  - [ ] 基于 `input`
-  - [ ] 基于 Agent 配置版本
+- [ ] 将 `cacheable` 作为 Agent hint 透传
+  - [ ] `POST /v1/runs` 可继续接收 `cacheable`
+  - [ ] task message 继续携带 `cacheable`
+  - [ ] Worker 调用 Agent 时透传 `cacheable`
 
-- [ ] Gateway 查询缓存
-  - [ ] key：`cache:{request_hash}`
-  - [ ] 命中时直接返回 cached result
-  - [ ] 不投递 RabbitMQ
-
-- [ ] 任务消息携带缓存信息
-  - [ ] `cacheable`
-  - [ ] `cache_key`
-
-- [ ] Gateway Event Consumer 写入缓存
-  - [ ] 只缓存 `succeeded`
-  - [ ] 只缓存 `cacheable=true`
-  - [ ] 写入 TTL
-
-- [ ] 验证缓存
-  - [ ] 第一次请求正常执行
-  - [ ] 第二次请求命中缓存
-  - [ ] Agent 调用次数不增加
+- [ ] 文档说明缓存属于 Agent 层能力
+  - [ ] Agent 自己决定缓存 key、版本、TTL 和失效策略
+  - [ ] RelayFlow 只保存短期 run 状态、事件、result/error
+  - [ ] RelayFlow 查询接口只返回当前 run 的执行结果，不承诺跨 run 缓存命中
 
 ## Phase 9：可观测性
 
@@ -301,10 +290,10 @@
   - [ ] 记录断开后 goroutine 数量
   - [ ] 验证 goroutine 回落
 
-- [ ] 验证 RabbitMQ 资源释放
-  - [ ] 临时队列自动删除
-  - [ ] consumer 被 cancel
-  - [ ] channel 被关闭
+- [ ] 验证 Gateway SSE Hub 资源释放
+  - [ ] 订阅者从 run_id 索引中删除
+  - [ ] 连接私有 buffer channel 被关闭
+  - [ ] 慢客户端被主动断开
 
 ## Phase 11：压测与故障注入
 

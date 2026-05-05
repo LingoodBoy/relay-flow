@@ -4,7 +4,6 @@
 
 ```http
 POST /v1/runs
-Idempotency-Key: optional-key
 Content-Type: application/json
 ```
 
@@ -23,8 +22,7 @@ Content-Type: application/json
 ```json
 {
   "run_id": "run_123",
-  "status": "queued",
-  "cached": false
+  "status": "queued"
 }
 ```
 
@@ -116,7 +114,6 @@ task message：
   "agent_id": "demo-agent",
   "attempt": 1,
   "cacheable": false,
-  "cache_key": "",
   "trace_id": "trace_abc"
 }
 ### event exchange设计
