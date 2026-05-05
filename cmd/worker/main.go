@@ -45,7 +45,14 @@ func main() {
 
 	// AgentClient 只关心黑盒 Agent 的 HTTP 协议；Worker 不解析 Agent 的业务输入。
 	agentClient := workerpkg.NewAgentClient(cfg.AgentURL, cfg.TaskTimeout)
-	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient)
+	eventPublisher, err := queue.NewEventPublisher(cfg.RabbitMQURL)
+	if err != nil {
+		slog.Error("create event publisher failed", "err", err)
+		os.Exit(1)
+	}
+	defer eventPublisher.Close()
+
+	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient, eventPublisher)
 	if err != nil {
 		slog.Error("create worker consumer failed", "err", err)
 		os.Exit(1)
