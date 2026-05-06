@@ -118,7 +118,7 @@ func (s *RedisStore) GetRunDetail(ctx context.Context, runID string, eventsLimit
 	}
 
 	if eventsLimit > 0 {
-		events, err := s.readRecentEvents(ctx, runID, eventsLimit)
+		events, err := s.listRunEvents(ctx, runID, -eventsLimit, -1)
 		if err != nil {
 			return RunDetail{}, err
 		}
@@ -164,10 +164,16 @@ func (s *RedisStore) readRawJSON(ctx context.Context, key string) (*json.RawMess
 	return &raw, nil
 }
 
-// readRecentEvents 读取 Run 最近 N 条事件。
-func (s *RedisStore) readRecentEvents(ctx context.Context, runID string, limit int64) ([]event.RunEvent, error) {
+// ListRunEvents 读取 Run 已经持久化的全部事件。
+// SSE 建连时会先补发这些历史事件，再继续等待实时事件。
+func (s *RedisStore) ListRunEvents(ctx context.Context, runID string) ([]event.RunEvent, error) {
+	return s.listRunEvents(ctx, runID, 0, -1)
+}
+
+// listRunEvents 按 Redis List 范围读取 Run 事件。
+func (s *RedisStore) listRunEvents(ctx context.Context, runID string, start int64, stop int64) ([]event.RunEvent, error) {
 	key := fmt.Sprintf("run:%s:events", runID)
-	values, err := s.client.LRange(ctx, key, -limit, -1).Result()
+	values, err := s.client.LRange(ctx, key, start, stop).Result()
 	if err != nil {
 		return nil, fmt.Errorf("read run events: %w", err)
 	}
