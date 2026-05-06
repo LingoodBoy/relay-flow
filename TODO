@@ -117,14 +117,14 @@
   - [x] 读取 Agent SSE 阶段事件
   - [x] 不实现普通 `/invoke` 模式
 
-- [ ] 实现 Worker Event Adapter
-  - [ ] 读取 Agent 原始事件
-  - [ ] 转换为 RelayFlow 标准事件
-  - [ ] 补充 `run_id`
-  - [ ] 为事件生成递增 `seq`
-  - [ ] 补充 `created_at`
-  - [ ] 过滤 token delta / text delta
-  - [ ] 只保留 `progress`、`tool_use`、`tool_result`、`succeeded`、`failed`
+- [x] 实现 Worker Event Adapter
+  - [x] 读取 Agent 原始事件
+  - [x] 转换为 RelayFlow 标准事件
+  - [x] 补充 `run_id`
+  - [x] 为事件生成递增 `seq`
+  - [x] 补充 `created_at`
+  - [x] 过滤 token delta / text delta
+  - [x] 只保留 `progress`、`tool_use`、`tool_result`、`succeeded`、`failed`
 
 - [ ] 验证阶段事件链路
   - [ ] Agent 输出工具调用事件

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -104,20 +105,31 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		return
 	}
 
-	result, err := c.agentClient.InvokeEvents(ctx, task)
-	if err != nil {
-		// Phase 1 先丢弃失败消息；重试和死信队列后续单独设计，避免现在无限重放。
-		slog.Error("task execution failed", "run_id", task.RunID, "err", err)
-		if publishErr := c.publishFailedEvent(ctx, task.RunID, err); publishErr != nil {
-			slog.Error("publish failed event failed", "run_id", task.RunID, "err", publishErr)
+	adapter := NewEventAdapter(task.RunID, 2)
+	if err := c.agentClient.StreamEvents(ctx, task, func(raw AgentRawEvent) error {
+		evt, ok, err := adapter.Adapt(raw)
+		if err != nil {
+			return err
 		}
-		_ = delivery.Nack(false, false)
-		return
-	}
-
-	slog.Info("task executed", "run_id", task.RunID, "agent_response", string(result))
-	if err := c.publishRunEvent(ctx, task.RunID, 2, event.EventTypeSucceeded, "任务执行成功", json.RawMessage(result)); err != nil {
-		slog.Error("publish succeeded event failed", "run_id", task.RunID, "err", err)
+		if !ok {
+			slog.Info("agent event ignored", "run_id", task.RunID, "event_type", raw.Type)
+			return nil
+		}
+		if err := c.eventPublisher.PublishRunEvent(ctx, evt); err != nil {
+			return fmt.Errorf("publish adapted run event: %w", err)
+		}
+		slog.Info("agent event published", "run_id", task.RunID, "seq", evt.Seq, "type", evt.Type)
+		return nil
+	}); err != nil {
+		// Phase 3 仍然先丢弃失败消息；重试和死信队列后续单独设计，避免现在无限重放。
+		slog.Error("task execution failed", "run_id", task.RunID, "err", err)
+		if !errors.Is(err, ErrAgentFailedEvent) {
+			if publishErr := c.publishFailedEvent(ctx, task.RunID, adapter.NextSeq(), err); publishErr != nil {
+				slog.Error("publish failed event failed", "run_id", task.RunID, "err", publishErr)
+			}
+		} else {
+			slog.Info("agent failed event already published", "run_id", task.RunID)
+		}
 		_ = delivery.Nack(false, false)
 		return
 	}
@@ -144,11 +156,11 @@ func (c *Consumer) publishRunEvent(ctx context.Context, runID string, seq int64,
 }
 
 // publishFailedEvent 把错误信息包装成标准 failed 事件。
-func (c *Consumer) publishFailedEvent(ctx context.Context, runID string, err error) error {
+func (c *Consumer) publishFailedEvent(ctx context.Context, runID string, seq int64, err error) error {
 	payload, marshalErr := json.Marshal(map[string]string{"error": err.Error()})
 	if marshalErr != nil {
 		return fmt.Errorf("marshal failed event payload: %w", marshalErr)
 	}
 
-	return c.publishRunEvent(ctx, runID, 2, event.EventTypeFailed, "任务执行失败", payload)
+	return c.publishRunEvent(ctx, runID, seq, event.EventTypeFailed, "任务执行失败", payload)
 }
