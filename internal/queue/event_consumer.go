@@ -15,15 +15,20 @@ type RunEventStore interface {
 	AppendRunEvent(ctx context.Context, evt event.RunEvent) error
 }
 
+type RunEventSink interface {
+	PublishRunEvent(evt event.RunEvent)
+}
+
 // EventConsumer 消费 RabbitMQ Run 事件，并把事件持久化到 Redis。
 type EventConsumer struct {
 	conn  *amqp.Connection
 	ch    *amqp.Channel
 	store RunEventStore
+	sink  RunEventSink
 }
 
 // NewEventConsumer 创建 Gateway 事件消费者。
-func NewEventConsumer(rabbitMQURL string, store RunEventStore) (*EventConsumer, error) {
+func NewEventConsumer(rabbitMQURL string, store RunEventStore, sink RunEventSink) (*EventConsumer, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("dial rabbitmq: %w", err)
@@ -35,7 +40,7 @@ func NewEventConsumer(rabbitMQURL string, store RunEventStore) (*EventConsumer, 
 		return nil, fmt.Errorf("open rabbitmq channel: %w", err)
 	}
 
-	return &EventConsumer{conn: conn, ch: ch, store: store}, nil
+	return &EventConsumer{conn: conn, ch: ch, store: store, sink: sink}, nil
 }
 
 // Close 关闭事件消费者持有的 channel 和 connection。
@@ -94,6 +99,9 @@ func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delive
 		slog.Error("persist run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
 		_ = delivery.Nack(false, false)
 		return
+	}
+	if c.sink != nil {
+		c.sink.PublishRunEvent(evt)
 	}
 
 	if err := delivery.Ack(false); err != nil {

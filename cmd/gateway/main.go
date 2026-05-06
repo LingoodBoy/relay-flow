@@ -56,7 +56,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	eventConsumer, err := queue.NewEventConsumer(cfg.RabbitMQURL, runStore)
+	sseHub := gatewayhttp.NewSSEHub()
+	eventConsumer, err := queue.NewEventConsumer(cfg.RabbitMQURL, runStore, sseHub)
 	if err != nil {
 		slog.Error("create event consumer failed", "err", err)
 		os.Exit(1)
@@ -79,6 +80,7 @@ func main() {
 	server := gatewayhttp.NewServer(gatewayhttp.Dependencies{
 		Store:     runStore,
 		Publisher: taskPublisher,
+		SSEHub:    sseHub,
 	})
 	httpServer := &http.Server{
 		Addr:    cfg.GatewayAddr,

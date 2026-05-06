@@ -12,8 +12,7 @@ Content-Type: application/json
   "agent_id": "demo-agent",
   "input": {
     "question": "分析一下 RabbitMQ 的 ACK 机制"
-  },
-  "cacheable": false
+  }
 }
 ```
 
@@ -113,7 +112,6 @@ task message：
   "run_id": "run_123",
   "agent_id": "demo-agent",
   "attempt": 1,
-  "cacheable": false,
   "trace_id": "trace_abc"
 }
 ### event exchange设计

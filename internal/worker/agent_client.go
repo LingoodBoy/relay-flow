@@ -46,7 +46,8 @@ func NewAgentClient(baseURL string, timeout time.Duration) *AgentClient {
 // Agent 只输出自己的业务事件，不需要知道 RelayFlow 的 run_id、seq 或存储细节。
 func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, handle func(AgentRawEvent) error) error {
 	body, err := json.Marshal(map[string]any{
-		"input": json.RawMessage(task.Input),
+		"input":      json.RawMessage(task.Input),
+		"agent_type": task.AgentID,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal agent event request: %w", err)

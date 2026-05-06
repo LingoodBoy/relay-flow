@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any, TypedDict
 
@@ -17,6 +18,11 @@ class GraphState(TypedDict):
     location: str
     tool_result: str
     result: str
+
+
+# pause_stage 在 LangGraph 演示里人为放慢阶段切换，方便观察 SSE 推送顺序。
+async def pause_stage() -> None:
+    await asyncio.sleep(8)
 
 
 # invoke 复用普通 OpenAI 兼容调用，保持三个 Demo Agent 的非流式接口一致。
@@ -75,6 +81,7 @@ async def invoke_events(request: InvokeRequest) -> AsyncIterator[tuple[str, dict
     yield "progress", {
         "message": "开始处理请求",
     }
+    await pause_stage()
 
     question = extract_prompt_text(request.input)
     initial_state: GraphState = {
@@ -101,13 +108,16 @@ async def invoke_events(request: InvokeRequest) -> AsyncIterator[tuple[str, dict
                 "tool_name": "get_weather",
                 "tool_input": {"location": initial_state["location"]},
             }
+            await pause_stage()
             event_type = "tool_result"
             message = "天气工具返回结果"
             payload["message"] = message
             payload["tool_name"] = "get_weather"
             payload["tool_output"] = fake_weather(initial_state["location"])
         yield event_type, payload
+        await pause_stage()
 
+    await pause_stage()
     yield "succeeded", {
         "message": "请求处理完成",
         "result": final_result,
