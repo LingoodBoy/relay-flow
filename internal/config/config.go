@@ -14,15 +14,17 @@ const (
 	defaultAgentHTTPURL      = "http://localhost:8000"
 	defaultGatewayAddr       = ":8080"
 	defaultTaskTimeoutSecond = 30
+	defaultWorkerConcurrency = 20
 )
 
 // Config 是 Gateway 和 Worker 共享的基础运行时配置。
 type Config struct {
-	RabbitMQURL string
-	RedisAddr   string
-	AgentURL    string
-	GatewayAddr string
-	TaskTimeout time.Duration
+	RabbitMQURL       string
+	RedisAddr         string
+	AgentURL          string
+	GatewayAddr       string
+	TaskTimeout       time.Duration
+	WorkerConcurrency int
 }
 
 // Load 从环境变量加载配置；未设置时使用本地开发默认值。
@@ -32,13 +34,18 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	workerConcurrency, err := getEnvInt("RELAYFLOW_WORKER_CONCURRENCY", defaultWorkerConcurrency)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
-		RabbitMQURL: getEnv("RELAYFLOW_RABBITMQ_URL", defaultRabbitMQURL),
-		RedisAddr:   getEnv("RELAYFLOW_REDIS_ADDR", defaultRedisAddr),
-		AgentURL:    getEnv("RELAYFLOW_AGENT_URL", defaultAgentHTTPURL),
-		GatewayAddr: getEnv("RELAYFLOW_GATEWAY_ADDR", defaultGatewayAddr),
-		TaskTimeout: time.Duration(taskTimeoutSeconds) * time.Second,
+		RabbitMQURL:       getEnv("RELAYFLOW_RABBITMQ_URL", defaultRabbitMQURL),
+		RedisAddr:         getEnv("RELAYFLOW_REDIS_ADDR", defaultRedisAddr),
+		AgentURL:          getEnv("RELAYFLOW_AGENT_URL", defaultAgentHTTPURL),
+		GatewayAddr:       getEnv("RELAYFLOW_GATEWAY_ADDR", defaultGatewayAddr),
+		TaskTimeout:       time.Duration(taskTimeoutSeconds) * time.Second,
+		WorkerConcurrency: workerConcurrency,
 	}, nil
 }
 

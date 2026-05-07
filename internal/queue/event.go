@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -14,6 +15,7 @@ import (
 type EventPublisher struct {
 	conn *amqp.Connection
 	ch   *amqp.Channel
+	mu   sync.Mutex
 }
 
 // NewEventPublisher 创建事件发布器，并在 Worker 生命周期内复用连接。
@@ -53,6 +55,8 @@ func (p *EventPublisher) PublishRunEvent(ctx context.Context, evt event.RunEvent
 		return fmt.Errorf("marshal run event: %w", err)
 	}
 
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if err := p.ch.PublishWithContext(
 		ctx,
 		EventExchange,

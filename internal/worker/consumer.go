@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -19,10 +20,12 @@ type Consumer struct {
 	ch             *amqp.Channel
 	agentClient    *AgentClient
 	eventPublisher *queue.EventPublisher
+	concurrency    int
+	ackMu          sync.Mutex
 }
 
 // NewConsumer 创建 RabbitMQ 任务消费者，并持有消费用的长连接。
-func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *queue.EventPublisher) (*Consumer, error) {
+func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *queue.EventPublisher, concurrency int) (*Consumer, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("dial rabbitmq: %w", err)
@@ -33,12 +36,18 @@ func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *q
 		_ = conn.Close()
 		return nil, fmt.Errorf("open rabbitmq channel: %w", err)
 	}
+	if err := ch.Qos(concurrency, 0, false); err != nil {
+		_ = ch.Close()
+		_ = conn.Close()
+		return nil, fmt.Errorf("set rabbitmq qos: %w", err)
+	}
 
 	return &Consumer{
 		conn:           conn,
 		ch:             ch,
 		agentClient:    agentClient,
 		eventPublisher: eventPublisher,
+		concurrency:    concurrency,
 	}, nil
 }
 
@@ -56,11 +65,11 @@ func (c *Consumer) Close() error {
 	return nil
 }
 
-// Run 启动任务消费循环，直到 context 取消或队列通道关闭。
+// Run 启动任务消费循环，并限制同一进程内同时执行的任务数。
 func (c *Consumer) Run(ctx context.Context) error {
 	// autoAck=false，表示 Worker 必须处理成功后手动 ACK。
 	// 这样 Worker 异常退出时，RabbitMQ 不会把未确认的任务当成已完成。
-	// 当前阶段只做单 Worker 基础消费，重试和死信队列会放到后续阶段实现。
+	// Qos(prefetch=concurrency) 会让超过并发上限的消息继续留在 RabbitMQ 队列中。
 	deliveries, err := c.ch.Consume(
 		queue.TaskQueue,
 		"",
@@ -74,7 +83,8 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consume task queue: %w", err)
 	}
 
-	slog.Info("worker consuming task queue", "queue", queue.TaskQueue)
+	sem := make(chan struct{}, c.concurrency)
+	slog.Info("worker consuming task queue", "queue", queue.TaskQueue, "concurrency", c.concurrency)
 	for {
 		select {
 		case <-ctx.Done():
@@ -83,7 +93,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 			if !ok {
 				return fmt.Errorf("task delivery channel closed")
 			}
-			c.handleDelivery(ctx, delivery)
+			sem <- struct{}{}
+			go func() {
+				defer func() { <-sem }()
+				c.handleDelivery(ctx, delivery)
+			}()
 		}
 	}
 }
@@ -94,14 +108,14 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 	if err := json.Unmarshal(delivery.Body, &task); err != nil {
 		// 消息格式错误通常不是临时故障，重新入队也大概率继续失败，所以直接丢弃。
 		slog.Error("decode task message failed", "err", err)
-		_ = delivery.Nack(false, false)
+		c.nackDelivery(delivery, false)
 		return
 	}
 
 	slog.Info("task received", "run_id", task.RunID, "agent_id", task.AgentID)
 	if err := c.publishRunEvent(ctx, task.RunID, 1, event.EventTypeRunning, "任务开始执行", nil); err != nil {
 		slog.Error("publish running event failed", "run_id", task.RunID, "err", err)
-		_ = delivery.Nack(false, false)
+		c.nackDelivery(delivery, false)
 		return
 	}
 
@@ -130,16 +144,30 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		} else {
 			slog.Info("agent failed event already published", "run_id", task.RunID)
 		}
-		_ = delivery.Nack(false, false)
+		c.nackDelivery(delivery, false)
 		return
 	}
 
 	// 只有 Agent 成功返回后才 ACK，确保队列语义是“至少处理到 Agent 调用完成”。
-	if err := delivery.Ack(false); err != nil {
+	if err := c.ackDelivery(delivery); err != nil {
 		slog.Error("ack task failed", "run_id", task.RunID, "err", err)
 		return
 	}
 	slog.Info("task acked", "run_id", task.RunID)
+}
+
+// ackDelivery 串行化 ACK，避免多个 goroutine 同时操作同一个 AMQP channel。
+func (c *Consumer) ackDelivery(delivery amqp.Delivery) error {
+	c.ackMu.Lock()
+	defer c.ackMu.Unlock()
+	return delivery.Ack(false)
+}
+
+// nackDelivery 串行化 NACK，requeue=false 表示当前阶段失败消息不重新入队。
+func (c *Consumer) nackDelivery(delivery amqp.Delivery, requeue bool) {
+	c.ackMu.Lock()
+	defer c.ackMu.Unlock()
+	_ = delivery.Nack(false, requeue)
 }
 
 // publishRunEvent 构造并发布 Worker 基础事件。
