@@ -30,6 +30,7 @@ func main() {
 		"redis", cfg.RedisAddr,
 		"agent", cfg.AgentURL,
 		"task_timeout", cfg.TaskTimeout,
+		"concurrency", cfg.WorkerConcurrency,
 	)
 
 	// Worker 也声明拓扑是为了支持独立部署：即使 Gateway 暂时没启动，Worker 也能自检队列结构。
@@ -52,7 +53,7 @@ func main() {
 	}
 	defer eventPublisher.Close()
 
-	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient, eventPublisher)
+	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient, eventPublisher, cfg.WorkerConcurrency)
 	if err != nil {
 		slog.Error("create worker consumer failed", "err", err)
 		os.Exit(1)

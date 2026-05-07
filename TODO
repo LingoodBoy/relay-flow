@@ -166,13 +166,15 @@
 
 ## Phase 5：Worker 并发控制
 
-- [ ] 增加 Worker 并发配置
-  - [ ] `WORKER_CONCURRENCY=20`
+- [x] 增加 Worker 并发配置
+  - [x] `RELAYFLOW_WORKER_CONCURRENCY=20`
 
-- [ ] 实现 Worker Pool
-  - [ ] 同时最多处理 N 个任务
-  - [ ] 超过并发上限的任务留在 RabbitMQ
-  - [ ] 处理完成后释放执行名额
+- [x] 实现 Worker 并发控制
+  - [x] 设置 RabbitMQ `Qos(concurrency, 0, false)`
+  - [x] 使用 semaphore 限制同时执行数量
+  - [x] 同时最多处理 N 个任务
+  - [x] 超过并发上限的任务留在 RabbitMQ
+  - [x] 处理完成后释放执行名额
 
 - [ ] 验证执行层限并发
   - [ ] Agent 模拟 5s 慢响应
@@ -181,16 +183,16 @@
 
 ## Phase 6：Redis 存储边界
 
-- [ ] 明确 Redis 只做运行态持久化
-  - [ ] 保存 `run:{run_id}` 当前状态
-  - [ ] 保存 `run:{run_id}:events` 事件历史
-  - [ ] 保存 `run:{run_id}:result`
-  - [ ] 保存 `run:{run_id}:error`
+- [x] 明确 Redis 只做运行态持久化
+  - [x] 保存 `run:{run_id}` 当前状态
+  - [x] 保存 `run:{run_id}:events` 事件历史
+  - [x] 保存 `run:{run_id}:result`
+  - [x] 保存 `run:{run_id}:error`
 
-- [ ] 不实现 Redis 幂等控制
-  - [ ] 不读取 `Idempotency-Key`
-  - [ ] 不创建 `idem:{idempotency_key}`
-  - [ ] 不拦截重复请求
+- [x] 不实现 Redis 幂等控制
+  - [x] 不读取 `Idempotency-Key`
+  - [x] 不创建 `idem:{idempotency_key}`
+  - [x] 不拦截重复请求
 
 ## Phase 7：超时、重试与 DLQ
 
@@ -254,7 +256,7 @@
 
 ## Phase 10：SSE 协程泄露验证
 
-- [ ] 编写 SSE 压测脚本
+- [x] 编写 SSE 压测脚本
   - [ ] 建立 1000 个 SSE 连接
   - [ ] 建立 5000 个 SSE 连接
   - [ ] 建立 10000 个 SSE 连接
@@ -297,23 +299,3 @@
   - [ ] 测试数据
   - [ ] 瓶颈分析
   - [ ] 后续优化方向
-
-## Phase 12：可选 Realtime Stream 模式
-
-- [ ] 新增 `POST /v1/stream`
-  - [ ] Gateway 直接调用 Agent stream endpoint
-  - [ ] 不经过 RabbitMQ
-  - [ ] 直接将 Agent token stream 转发给前端
-
-- [ ] 增加 stream 并发控制
-  - [ ] 每个 Agent 配置最大 stream 并发
-  - [ ] 超过并发上限返回 429 或排队等待短时间
-
-- [ ] 增加 stream 超时控制
-  - [ ] 首 token 超时
-  - [ ] 总响应超时
-  - [ ] 客户端断开后取消上游请求
-
-- [ ] 明确两种模式边界
-  - [ ] `/v1/runs`：可靠异步任务，支持阶段事件、重试、DLQ
-  - [ ] `/v1/stream`：实时吐字反代，低延迟，不保证后台任务可靠完成

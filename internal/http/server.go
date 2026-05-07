@@ -247,10 +247,18 @@ func (s *Server) handleRunEvents(c *gin.Context) {
 		return
 	}
 
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 	for {
 		select {
 		case <-c.Request.Context().Done():
 			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil {
+				_ = c.Error(fmt.Errorf("write sse heartbeat: %w", err))
+				return
+			}
+			flusher.Flush()
 		case evt, ok := <-sub.Events():
 			if !ok {
 				return

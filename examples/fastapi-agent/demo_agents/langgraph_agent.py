@@ -1,11 +1,10 @@
 import asyncio
+import random
 from collections.abc import AsyncIterator
 from typing import Any, TypedDict
 
 from .common import (
     InvokeRequest,
-    call_openai_compatible_chat,
-    call_openai_compatible_llm,
     extract_location,
     extract_prompt_text,
     fake_weather,
@@ -27,7 +26,9 @@ async def pause_stage() -> None:
 
 # invoke 复用普通 OpenAI 兼容调用，保持三个 Demo Agent 的非流式接口一致。
 async def invoke(request: InvokeRequest) -> dict[str, Any]:
-    return await call_openai_compatible_llm(request)
+    location = extract_location(request.input)
+    await asyncio.sleep(random.uniform(1, 3))
+    return {"result": random_weather_answer(location)}
 
 
 # plan_node 模拟 Agent 规划阶段，LangGraph 会把该节点输出作为一次图更新事件。
@@ -40,21 +41,20 @@ def tool_node(state: GraphState) -> dict[str, str]:
     return {"tool_result": format_weather(fake_weather(state["location"]))}
 
 
-# final_node 调用真实 LLM 汇总工具结果，证明 LangGraph 图里有模型推理节点。
+# final_node 模拟 LLM 汇总阶段，压测时不调用真实模型，避免产生额外费用。
 async def final_node(state: GraphState) -> dict[str, str]:
-    result = await call_openai_compatible_chat(
-        [
-            {
-                "role": "system",
-                "content": "你是 RelayFlow LangGraph Agent，请基于工具结果用一句中文回答。",
-            },
-            {
-                "role": "user",
-                "content": f"用户问题：{state['question']}\n工具结果：{state['tool_result']}",
-            },
-        ]
-    )
-    return {"result": result}
+    await asyncio.sleep(random.uniform(1, 5))
+    return {"result": random_weather_answer(state["location"])}
+
+
+# random_weather_answer 返回一个本地随机结果，保留 Agent 最终回答形态。
+def random_weather_answer(location: str) -> str:
+    templates = [
+        f"{location}今天晴，气温 24°C，东北风 2 级。",
+        f"{location}天气不错，晴天，适合出门。",
+        f"{location}当前天气为晴，体感舒适。",
+    ]
+    return random.choice(templates)
 
 
 # invoke_events 构建并运行一个真实 LangGraph 状态图，将图更新转换为阶段 SSE 事件。
