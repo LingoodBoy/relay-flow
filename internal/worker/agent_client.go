@@ -19,6 +19,25 @@ import (
 // 调用方可以据此避免再补发一条重复的 failed RunEvent。
 var ErrAgentFailedEvent = errors.New("agent returned failed event")
 
+type AgentStatusError struct {
+	StatusCode int
+	Body       string
+}
+
+// Error 返回上游 Agent HTTP 状态错误，供 Worker 做重试分类。
+func (e AgentStatusError) Error() string {
+	return fmt.Sprintf("agent events returned status %d: %s", e.StatusCode, e.Body)
+}
+
+type AgentInvalidRequestError struct {
+	Message string
+}
+
+// Error 返回 Agent 请求构造或协议解析错误，这类错误通常不应重试。
+func (e AgentInvalidRequestError) Error() string {
+	return e.Message
+}
+
 // AgentRawEvent 表示 Agent SSE 接口吐出的原始阶段事件。
 // 这里暂时只保留 event 名称和 data 字符串，具体标准化交给 Worker Event Adapter。
 type AgentRawEvent struct {
@@ -29,33 +48,38 @@ type AgentRawEvent struct {
 type AgentClient struct {
 	baseURL    string
 	httpClient *http.Client
+	timeout    time.Duration
 }
 
 // NewAgentClient 创建调用黑盒 Agent 的 HTTP 客户端。
 func NewAgentClient(baseURL string, timeout time.Duration) *AgentClient {
 	return &AgentClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{
-			// 这里的超时覆盖完整 HTTP 调用，防止黑盒 Agent 慢响应时 Worker 长时间占住消息。
-			Timeout: timeout,
-		},
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{},
+		timeout:    timeout,
 	}
 }
 
 // StreamEvents 调用 Agent 的 POST /invoke/events 接口，并逐条读取 SSE 阶段事件。
 // Agent 只输出自己的业务事件，不需要知道 RelayFlow 的 run_id、seq 或存储细节。
 func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, handle func(AgentRawEvent) error) error {
+	if c.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+	}
+
 	body, err := json.Marshal(map[string]any{
 		"input":      json.RawMessage(task.Input),
 		"agent_type": task.AgentID,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal agent event request: %w", err)
+		return AgentInvalidRequestError{Message: fmt.Sprintf("marshal agent event request: %v", err)}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/invoke/events", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create agent event request: %w", err)
+		return AgentInvalidRequestError{Message: fmt.Sprintf("create agent event request: %v", err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -71,7 +95,7 @@ func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, 
 		if readErr != nil {
 			return fmt.Errorf("read agent event error response: %w", readErr)
 		}
-		return fmt.Errorf("agent events returned status %d: %s", resp.StatusCode, string(respBody))
+		return AgentStatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	eventType := ""
@@ -114,7 +138,7 @@ func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, 
 		return fmt.Errorf("read agent event stream: %w", err)
 	}
 	if !succeeded {
-		return fmt.Errorf("agent event stream ended without succeeded event")
+		return AgentInvalidRequestError{Message: "agent event stream ended without succeeded event"}
 	}
 	return nil
 }

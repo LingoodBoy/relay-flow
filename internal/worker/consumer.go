@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -20,12 +23,14 @@ type Consumer struct {
 	ch             *amqp.Channel
 	agentClient    *AgentClient
 	eventPublisher *queue.EventPublisher
+	taskPublisher  *queue.Publisher
 	concurrency    int
+	maxAttempts    int
 	ackMu          sync.Mutex
 }
 
 // NewConsumer 创建 RabbitMQ 任务消费者，并持有消费用的长连接。
-func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *queue.EventPublisher, concurrency int) (*Consumer, error) {
+func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *queue.EventPublisher, taskPublisher *queue.Publisher, concurrency int, maxAttempts int) (*Consumer, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("dial rabbitmq: %w", err)
@@ -47,7 +52,9 @@ func NewConsumer(rabbitMQURL string, agentClient *AgentClient, eventPublisher *q
 		ch:             ch,
 		agentClient:    agentClient,
 		eventPublisher: eventPublisher,
+		taskPublisher:  taskPublisher,
 		concurrency:    concurrency,
+		maxAttempts:    maxAttempts,
 	}, nil
 }
 
@@ -111,15 +118,19 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		c.nackDelivery(delivery, false)
 		return
 	}
+	if task.Attempt == 0 {
+		task.Attempt = 1
+	}
 
-	slog.Info("task received", "run_id", task.RunID, "agent_id", task.AgentID)
-	if err := c.publishRunEvent(ctx, task.RunID, 1, event.EventTypeRunning, "任务开始执行", nil); err != nil {
+	slog.Info("task received", "run_id", task.RunID, "agent_id", task.AgentID, "attempt", task.Attempt)
+	baseSeq := attemptBaseSeq(task.Attempt)
+	if err := c.publishRunEvent(ctx, task.RunID, baseSeq, event.EventTypeRunning, "任务开始执行", nil); err != nil {
 		slog.Error("publish running event failed", "run_id", task.RunID, "err", err)
 		c.nackDelivery(delivery, false)
 		return
 	}
 
-	adapter := NewEventAdapter(task.RunID, 2)
+	adapter := NewEventAdapter(task.RunID, baseSeq+1)
 	if err := c.agentClient.StreamEvents(ctx, task, func(raw AgentRawEvent) error {
 		evt, ok, err := adapter.Adapt(raw)
 		if err != nil {
@@ -135,16 +146,13 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		slog.Info("agent event published", "run_id", task.RunID, "seq", evt.Seq, "type", evt.Type)
 		return nil
 	}); err != nil {
-		// Phase 3 仍然先丢弃失败消息；重试和死信队列后续单独设计，避免现在无限重放。
-		slog.Error("task execution failed", "run_id", task.RunID, "err", err)
-		if !errors.Is(err, ErrAgentFailedEvent) {
-			if publishErr := c.publishFailedEvent(ctx, task.RunID, adapter.NextSeq(), err); publishErr != nil {
-				slog.Error("publish failed event failed", "run_id", task.RunID, "err", publishErr)
-			}
-		} else {
+		slog.Error("task execution failed", "run_id", task.RunID, "attempt", task.Attempt, "err", err)
+		if errors.Is(err, ErrAgentFailedEvent) {
 			slog.Info("agent failed event already published", "run_id", task.RunID)
+			c.nackDelivery(delivery, false)
+			return
 		}
-		c.nackDelivery(delivery, false)
+		c.handleTaskFailure(ctx, delivery, task, adapter.NextSeq(), err)
 		return
 	}
 
@@ -170,6 +178,49 @@ func (c *Consumer) nackDelivery(delivery amqp.Delivery, requeue bool) {
 	_ = delivery.Nack(false, requeue)
 }
 
+// handleTaskFailure 根据错误类型决定补发事件、延迟重试或进入死信队列。
+func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery, task queue.TaskMessage, seq int64, err error) {
+	errKind := classifyAgentError(err)
+	canRetry := isRetryableAgentError(errKind) && task.Attempt < c.maxAttempts
+	if errKind == agentErrorTimeout {
+		if publishErr := c.publishErrorEvent(ctx, task.RunID, seq, event.EventTypeTimeout, "Agent 调用超时", err); publishErr != nil {
+			slog.Error("publish timeout event failed", "run_id", task.RunID, "err", publishErr)
+		}
+		seq++
+	} else if !canRetry {
+		if publishErr := c.publishErrorEvent(ctx, task.RunID, seq, event.EventTypeFailed, "任务执行失败", err); publishErr != nil {
+			slog.Error("publish failed event failed", "run_id", task.RunID, "err", publishErr)
+		}
+		seq++
+	}
+
+	if !canRetry {
+		if publishErr := c.publishDeadLetter(ctx, task, seq, err); publishErr != nil {
+			slog.Error("publish dead letter failed", "run_id", task.RunID, "err", publishErr)
+			c.nackDelivery(delivery, true)
+			return
+		}
+		c.nackDelivery(delivery, false)
+		return
+	}
+
+	nextTask := task
+	nextTask.Attempt++
+	delay := retryDelay(task.Attempt)
+	if publishErr := c.publishRetrying(ctx, nextTask, seq, delay, err); publishErr != nil {
+		slog.Error("publish retrying failed", "run_id", task.RunID, "err", publishErr)
+		c.nackDelivery(delivery, true)
+		return
+	}
+	if err := c.taskPublisher.PublishRetryTask(ctx, nextTask, delay); err != nil {
+		slog.Error("publish retry task failed", "run_id", task.RunID, "err", err)
+		c.nackDelivery(delivery, true)
+		return
+	}
+
+	c.ackOrLog(delivery, task.RunID)
+}
+
 // publishRunEvent 构造并发布 Worker 基础事件。
 func (c *Consumer) publishRunEvent(ctx context.Context, runID string, seq int64, eventType event.EventType, message string, payload json.RawMessage) error {
 	evt := event.RunEvent{
@@ -191,4 +242,122 @@ func (c *Consumer) publishFailedEvent(ctx context.Context, runID string, seq int
 	}
 
 	return c.publishRunEvent(ctx, runID, seq, event.EventTypeFailed, "任务执行失败", payload)
+}
+
+// publishErrorEvent 把错误包装成指定类型事件，timeout/failed 共用这一条路径。
+func (c *Consumer) publishErrorEvent(ctx context.Context, runID string, seq int64, eventType event.EventType, message string, err error) error {
+	payload, marshalErr := json.Marshal(map[string]string{"error": err.Error()})
+	if marshalErr != nil {
+		return fmt.Errorf("marshal error event payload: %w", marshalErr)
+	}
+
+	return c.publishRunEvent(ctx, runID, seq, eventType, message, payload)
+}
+
+// publishRetrying 发布重试计划事件，让查询接口和 SSE 都能看到任务并非静默等待。
+func (c *Consumer) publishRetrying(ctx context.Context, task queue.TaskMessage, seq int64, delay time.Duration, err error) error {
+	payload, marshalErr := json.Marshal(map[string]any{
+		"error":        err.Error(),
+		"next_attempt": task.Attempt,
+		"delay_ms":     delay.Milliseconds(),
+	})
+	if marshalErr != nil {
+		return fmt.Errorf("marshal retrying event payload: %w", marshalErr)
+	}
+
+	return c.publishRunEvent(ctx, task.RunID, seq, event.EventTypeRetrying, "任务稍后重试", payload)
+}
+
+// publishDeadLetter 发布最终死信事件，并把任务消息写入 RabbitMQ DLQ。
+func (c *Consumer) publishDeadLetter(ctx context.Context, task queue.TaskMessage, seq int64, err error) error {
+	payload, marshalErr := json.Marshal(map[string]any{
+		"error":        err.Error(),
+		"attempt":      task.Attempt,
+		"max_attempts": c.maxAttempts,
+	})
+	if marshalErr != nil {
+		return fmt.Errorf("marshal dead letter event payload: %w", marshalErr)
+	}
+	if err := c.publishRunEvent(ctx, task.RunID, seq, event.EventTypeDeadLetter, "任务进入死信队列", payload); err != nil {
+		return err
+	}
+	return c.taskPublisher.PublishDeadLetterTask(ctx, task, err.Error())
+}
+
+// ackOrLog 确认当前消息已经由 Worker 接管完成，ACK 失败只记录日志。
+func (c *Consumer) ackOrLog(delivery amqp.Delivery, runID string) {
+	if err := c.ackDelivery(delivery); err != nil {
+		slog.Error("ack task failed", "run_id", runID, "err", err)
+	}
+}
+
+type agentErrorKind string
+
+const (
+	agentErrorNetwork agentErrorKind = "network"
+	agentErrorTimeout agentErrorKind = "timeout"
+	agentError5xx     agentErrorKind = "agent_5xx"
+	agentError4xx     agentErrorKind = "agent_4xx"
+	agentErrorInvalid agentErrorKind = "invalid"
+	agentErrorUnknown agentErrorKind = "unknown"
+)
+
+// classifyAgentError 把 Agent 调用错误分成可重试和不可重试的大类。
+func classifyAgentError(err error) agentErrorKind {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return agentErrorTimeout
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return agentErrorTimeout
+		}
+		return agentErrorNetwork
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return agentErrorNetwork
+	}
+	var statusErr AgentStatusError
+	if errors.As(err, &statusErr) {
+		if statusErr.StatusCode >= http.StatusInternalServerError {
+			return agentError5xx
+		}
+		if statusErr.StatusCode >= http.StatusBadRequest {
+			return agentError4xx
+		}
+	}
+	var invalidErr AgentInvalidRequestError
+	if errors.As(err, &invalidErr) {
+		return agentErrorInvalid
+	}
+	return agentErrorUnknown
+}
+
+// isRetryableAgentError 判断某类错误是否值得延迟重试。
+func isRetryableAgentError(kind agentErrorKind) bool {
+	switch kind {
+	case agentErrorNetwork, agentErrorTimeout, agentError5xx:
+		return true
+	default:
+		return false
+	}
+}
+
+// retryDelay 根据当前 attempt 生成退避时间，避免失败任务立刻打回 Agent。
+func retryDelay(attempt int) time.Duration {
+	if attempt <= 1 {
+		return 10 * time.Second
+	}
+	if attempt == 2 {
+		return 30 * time.Second
+	}
+	return time.Minute
+}
+
+// attemptBaseSeq 为每次执行尝试预留一段 seq，保证重试后的事件仍然单调递增。
+func attemptBaseSeq(attempt int) int64 {
+	if attempt <= 1 {
+		return 1
+	}
+	return int64((attempt-1)*1000 + 1)
 }

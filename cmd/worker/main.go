@@ -29,8 +29,9 @@ func main() {
 		"rabbitmq", cfg.RabbitMQURL,
 		"redis", cfg.RedisAddr,
 		"agent", cfg.AgentURL,
-		"task_timeout", cfg.TaskTimeout,
+		"agent_timeout", cfg.AgentTimeout,
 		"concurrency", cfg.WorkerConcurrency,
+		"max_attempts", cfg.MaxAttempts,
 	)
 
 	// Worker 也声明拓扑是为了支持独立部署：即使 Gateway 暂时没启动，Worker 也能自检队列结构。
@@ -45,7 +46,7 @@ func main() {
 	}
 
 	// AgentClient 只关心黑盒 Agent 的 HTTP 协议；Worker 不解析 Agent 的业务输入。
-	agentClient := workerpkg.NewAgentClient(cfg.AgentURL, cfg.TaskTimeout)
+	agentClient := workerpkg.NewAgentClient(cfg.AgentURL, cfg.AgentTimeout)
 	eventPublisher, err := queue.NewEventPublisher(cfg.RabbitMQURL)
 	if err != nil {
 		slog.Error("create event publisher failed", "err", err)
@@ -53,7 +54,14 @@ func main() {
 	}
 	defer eventPublisher.Close()
 
-	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient, eventPublisher, cfg.WorkerConcurrency)
+	taskPublisher, err := queue.NewPublisher(cfg.RabbitMQURL)
+	if err != nil {
+		slog.Error("create task publisher failed", "err", err)
+		os.Exit(1)
+	}
+	defer taskPublisher.Close()
+
+	consumer, err := workerpkg.NewConsumer(cfg.RabbitMQURL, agentClient, eventPublisher, taskPublisher, cfg.WorkerConcurrency, cfg.MaxAttempts)
 	if err != nil {
 		slog.Error("create worker consumer failed", "err", err)
 		os.Exit(1)

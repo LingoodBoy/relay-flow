@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from demo_agents import AGENTS
-from demo_agents.common import InvokeRequest, emit_events
+from demo_agents.common import InvokeRequest, apply_failure_mode, emit_events
 
 
 app = FastAPI(title="RelayFlow FastAPI Agent Demo")
@@ -25,6 +25,7 @@ async def list_agents() -> dict[str, list[str]]:
 async def invoke(request: InvokeRequest):
     if request.agent_type not in AGENTS:
         raise HTTPException(status_code=404, detail=f"unsupported agent_type: {request.agent_type}")
+    await apply_failure_mode(request.input)
     agent = AGENTS[request.agent_type]
     return await agent.invoke(request)
 
@@ -34,6 +35,7 @@ async def invoke(request: InvokeRequest):
 async def invoke_events(request: InvokeRequest) -> StreamingResponse:
     if request.agent_type not in AGENTS:
         raise HTTPException(status_code=404, detail=f"unsupported agent_type: {request.agent_type}")
+    await apply_failure_mode(request.input)
     agent = AGENTS[request.agent_type]
     return StreamingResponse(emit_events(agent.invoke_events(request)), media_type="text/event-stream")
 

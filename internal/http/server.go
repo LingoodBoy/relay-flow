@@ -147,6 +147,7 @@ func (s *Server) handleCreateRun(c *gin.Context) {
 		Input:     req.Input,
 		Cacheable: req.Cacheable,
 		CreatedAt: now,
+		Attempt:   1,
 	}
 	if err := s.publisher.PublishTask(c.Request.Context(), task); err != nil {
 		_ = c.Error(err)
@@ -333,5 +334,7 @@ func writeSSEEvent(c *gin.Context, evt event.RunEvent) error {
 
 // isTerminalRunEvent 判断事件是否表示一次 Run 已经结束。
 func isTerminalRunEvent(evt event.RunEvent) bool {
-	return evt.Type == event.EventTypeSucceeded || evt.Type == event.EventTypeFailed
+	return evt.Type == event.EventTypeSucceeded ||
+		evt.Type == event.EventTypeFailed ||
+		evt.Type == event.EventTypeDeadLetter
 }

@@ -33,7 +33,6 @@ func main() {
 		"redis", cfg.RedisAddr,
 		"agent", cfg.AgentURL,
 		"addr", cfg.GatewayAddr,
-		"task_timeout", cfg.TaskTimeout,
 	)
 
 	// 拓扑声明放在启动阶段：配置不一致会立刻失败，避免请求进来后才发现队列不可用。

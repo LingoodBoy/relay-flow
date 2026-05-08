@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	StatusQueued    = "queued"
-	StatusRunning   = "running"
-	StatusSucceeded = "succeeded"
-	StatusFailed    = "failed"
+	StatusQueued     = "queued"
+	StatusRunning    = "running"
+	StatusSucceeded  = "succeeded"
+	StatusFailed     = "failed"
+	StatusDeadLetter = "dead_letter"
 )
 
 var ErrRunNotFound = redis.Nil
@@ -109,7 +110,7 @@ func (s *RedisStore) GetRunDetail(ctx context.Context, runID string, eventsLimit
 		}
 		detail.Result = result
 	}
-	if detail.Status == StatusFailed {
+	if detail.Status == StatusFailed || detail.Status == StatusDeadLetter {
 		runErr, err := s.readRawJSON(ctx, fmt.Sprintf("run:%s:error", runID))
 		if err != nil {
 			return RunDetail{}, err
@@ -210,6 +211,9 @@ func (s *RedisStore) AppendRunEvent(ctx context.Context, evt event.RunEvent) err
 		pipe.Set(ctx, fmt.Sprintf("run:%s:result", evt.RunID), string(evt.Payload), 0)
 	case event.EventTypeFailed:
 		pipe.HSet(ctx, runKey, "status", StatusFailed)
+		pipe.Set(ctx, fmt.Sprintf("run:%s:error", evt.RunID), string(evt.Payload), 0)
+	case event.EventTypeDeadLetter:
+		pipe.HSet(ctx, runKey, "status", StatusDeadLetter)
 		pipe.Set(ctx, fmt.Sprintf("run:%s:error", evt.RunID), string(evt.Payload), 0)
 	}
 

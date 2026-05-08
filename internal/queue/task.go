@@ -19,6 +19,7 @@ type TaskMessage struct {
 	Input     json.RawMessage `json:"input"`
 	Cacheable bool            `json:"cacheable"`
 	CreatedAt time.Time       `json:"created_at"`
+	Attempt   int             `json:"attempt"`
 }
 
 type Publisher struct {
@@ -26,9 +27,8 @@ type Publisher struct {
 	ch   *amqp.Channel
 }
 
-// NewPublisher 创建 RabbitMQ 任务发布器，并在 Gateway 生命周期内复用连接。
-// TODO
-// 当前阶段 Gateway 复用一个 AMQP connection/channel 发布任务，避免每次请求都重新建连接。
+// NewPublisher 创建 RabbitMQ 任务发布器，并在进程生命周期内复用连接。
+// Gateway 用它投递新任务，Worker 用它投递重试任务和死信任务。
 func NewPublisher(rabbitMQURL string) (*Publisher, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
@@ -60,6 +60,9 @@ func (p *Publisher) Close() error {
 
 // PublishTask 把任务消息发布到 RabbitMQ task exchange。
 func (p *Publisher) PublishTask(ctx context.Context, task TaskMessage) error {
+	if task.Attempt == 0 {
+		task.Attempt = 1
+	}
 	body, err := json.Marshal(task)
 	if err != nil {
 		return fmt.Errorf("marshal task message: %w", err)
@@ -82,6 +85,64 @@ func (p *Publisher) PublishTask(ctx context.Context, task TaskMessage) error {
 		},
 	); err != nil {
 		return fmt.Errorf("publish task message: %w", err)
+	}
+
+	return nil
+}
+
+// PublishRetryTask 把失败任务投递到 retry queue，消息到期后由 RabbitMQ 自动转回 task queue。
+func (p *Publisher) PublishRetryTask(ctx context.Context, task TaskMessage, delay time.Duration) error {
+	body, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("marshal retry task message: %w", err)
+	}
+
+	if err := p.ch.PublishWithContext(
+		ctx,
+		RetryExchange,
+		RetryRoutingKey,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			MessageId:    task.RunID,
+			Timestamp:    time.Now().UTC(),
+			Expiration:   fmt.Sprintf("%d", delay.Milliseconds()),
+			Body:         body,
+		},
+	); err != nil {
+		return fmt.Errorf("publish retry task message: %w", err)
+	}
+
+	return nil
+}
+
+// PublishDeadLetterTask 把不再重试的任务投递到 DLQ，方便后续人工排查或补偿。
+func (p *Publisher) PublishDeadLetterTask(ctx context.Context, task TaskMessage, reason string) error {
+	body, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("marshal dead letter task message: %w", err)
+	}
+
+	if err := p.ch.PublishWithContext(
+		ctx,
+		DLQExchange,
+		DLQRoutingKey,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			MessageId:    task.RunID,
+			Timestamp:    time.Now().UTC(),
+			Headers: amqp.Table{
+				"reason": reason,
+			},
+			Body: body,
+		},
+	); err != nil {
+		return fmt.Errorf("publish dead letter task message: %w", err)
 	}
 
 	return nil

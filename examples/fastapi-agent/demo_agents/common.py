@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -49,6 +50,31 @@ def extract_location(user_input: str | dict[str, Any] | list[Any]) -> str:
     if match:
         return match.group(1)
     return "北京"
+
+
+# extract_mode 读取 Demo 故障注入模式；真实 Agent 不需要实现这个测试字段。
+def extract_mode(user_input: str | dict[str, Any] | list[Any]) -> str:
+    if isinstance(user_input, dict):
+        mode = user_input.get("mode", "normal")
+        if isinstance(mode, str):
+            return mode
+    return "normal"
+
+
+# apply_failure_mode 为 Demo Agent 注入可控故障，方便验证 Worker timeout、retry 和 DLQ。
+async def apply_failure_mode(user_input: str | dict[str, Any] | list[Any]) -> None:
+    mode = extract_mode(user_input)
+    if mode == "normal":
+        return
+    if mode == "slow":
+        await asyncio.sleep(5)
+        return
+    if mode == "fail":
+        raise HTTPException(status_code=500, detail="demo agent forced failure")
+    if mode == "timeout":
+        await asyncio.sleep(3600)
+        return
+    raise HTTPException(status_code=400, detail=f"unsupported mode: {mode}")
 
 
 # fake_weather 返回稳定的天气工具结果，方便测试 Agent 阶段事件链路。

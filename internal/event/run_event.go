@@ -16,6 +16,7 @@ const (
 	EventTypeSucceeded  EventType = "succeeded"
 	EventTypeFailed     EventType = "failed"
 	EventTypeTimeout    EventType = "timeout"
+	EventTypeRetrying   EventType = "retrying"
 	EventTypeDeadLetter EventType = "dead_letter"
 )
 

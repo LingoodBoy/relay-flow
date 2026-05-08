@@ -12,9 +12,15 @@ const (
 	// Gateway 会把新任务先发到这个 exchange。
 	// 现在只有一个任务队列，所以先用一个固定 routing key。
 	// 后面如果要按 agent_id、优先级拆队列，可以继续增加 routing key。
-	TaskExchange   = "relayflow.task.exchange"
-	TaskQueue      = "relayflow.task.queue"
-	TaskRoutingKey = "relayflow.task"
+	TaskExchange    = "relayflow.task.exchange"
+	TaskQueue       = "relayflow.task.queue"
+	TaskRoutingKey  = "relayflow.task"
+	RetryExchange   = "relayflow.retry.exchange"
+	RetryQueue      = "relayflow.retry.queue"
+	RetryRoutingKey = "relayflow.retry"
+	DLQExchange     = "relayflow.dlq.exchange"
+	DLQQueue        = "relayflow.dlq"
+	DLQRoutingKey   = "relayflow.dlq"
 
 	EventExchange         = "relayflow.event.exchange"
 	EventPersistQueue     = "relayflow.event.persist.queue"
@@ -102,6 +108,75 @@ func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 		nil,
 	); err != nil {
 		return fmt.Errorf("declare task queue: %w", err)
+	}
+
+	if err := ch.ExchangeDeclare(
+		RetryExchange,
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("declare retry exchange: %w", err)
+	}
+
+	if _, err := ch.QueueDeclare(
+		RetryQueue,
+		true,
+		false,
+		false,
+		false,
+		amqp.Table{
+			"x-dead-letter-exchange":    TaskExchange,
+			"x-dead-letter-routing-key": TaskRoutingKey,
+		},
+	); err != nil {
+		return fmt.Errorf("declare retry queue: %w", err)
+	}
+
+	if err := ch.QueueBind(
+		RetryQueue,
+		RetryRoutingKey,
+		RetryExchange,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("bind retry queue: %w", err)
+	}
+
+	if err := ch.ExchangeDeclare(
+		DLQExchange,
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("declare dlq exchange: %w", err)
+	}
+
+	if _, err := ch.QueueDeclare(
+		DLQQueue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("declare dlq: %w", err)
+	}
+
+	if err := ch.QueueBind(
+		DLQQueue,
+		DLQRoutingKey,
+		DLQExchange,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("bind dlq: %w", err)
 	}
 
 	// 把 queue 绑定到 exchange 后，Gateway 发到 exchange 的任务才会进入这个 queue。
