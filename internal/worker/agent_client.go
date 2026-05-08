@@ -80,9 +80,15 @@ type AgentClient struct {
 // NewAgentClient 创建调用黑盒 Agent 的 HTTP 客户端。
 func NewAgentClient(baseURL string, timeout time.Duration) *AgentClient {
 	return &AgentClient{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{},
-		timeout:    timeout,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				// Agent 事件流是长连接 POST，请求本身持续时间长，复用 idle connection 的收益很低。
+				// 压测时 Uvicorn/代理可能先关闭空闲连接，Go 复用到旧连接会报 server closed idle connection。
+				DisableKeepAlives: true,
+			},
+		},
+		timeout: timeout,
 	}
 }
 

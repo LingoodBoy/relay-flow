@@ -1,0 +1,45 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 2s
+
+  tail_sampling:
+    decision_wait: 120s
+    num_traces: 50000
+    expected_new_traces_per_sec: 5000
+    policies:
+      - name: error-traces
+        type: status_code
+        status_code:
+          status_codes:
+            - ERROR
+
+      - name: slow-traces
+        type: latency
+        latency:
+          threshold_ms: 1000
+
+      - name: normal-traces
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 1
+
+exporters:
+  otlphttp/jaeger:
+    endpoint: http://jaeger:4318
+
+service:
+  pipelines:
+    traces:
+      receivers:
+        - otlp
+      processors:
+        - tail_sampling
+        - batch
+      exporters:
+        - otlphttp/jaeger

@@ -47,6 +47,7 @@ type Dependencies struct {
 	Store     RunStore
 	Publisher TaskPublisher
 	SSEHub    *SSEHub
+	LogConfig logger.HTTPLogConfig
 }
 
 // NewServer 创建 Gateway HTTP Server。
@@ -54,7 +55,7 @@ func NewServer(deps Dependencies) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
-	router.Use(logger.GinRequestLogger())
+	router.Use(logger.GinRequestLoggerWithConfig(deps.LogConfig))
 	router.Use(logger.GinRecovery())
 
 	server := &Server{

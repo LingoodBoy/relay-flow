@@ -77,15 +77,23 @@ Redis                            Frontend
 docker compose -f docker-compose.infra.yml up 
 docker compose -f docker-compose.agent.yml up --build
 docker compose -f docker-compose.relay.yml up --build
+# 压测
+locust -f tests/load/locustfile.py \
+  --host http://192.168.31.229:8080 \
+  --web-host 127.0.0.1 \
+  -u 15000 \
+  -r 500
+
 # 清理资源
 
 docker compose -f docker-compose.infra.yml rm -sf prometheus
-## 需开启 docker compose -f docker-compose.infra.yml up 
+## 需开启 
+docker compose -f docker-compose.infra.yml up 
+
 docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.task.queue
 docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.retry.queue
 docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.dlq
 docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.event.persist.queue
-
 docker exec relayflow-redis-1 redis-cli FLUSHDB
 
 

@@ -17,6 +17,9 @@ const (
 	defaultAgentTimeoutSecond = 0
 	defaultWorkerConcurrency  = 20
 	defaultMaxAttempts        = 3
+	defaultLogLevel           = "info"
+	defaultLogSampleRate      = 0.01
+	defaultSlowRequestMS      = 300000
 )
 
 // Config 是 Gateway 和 Worker 共享的基础运行时配置。
@@ -29,6 +32,9 @@ type Config struct {
 	AgentTimeout      time.Duration
 	WorkerConcurrency int
 	MaxAttempts       int
+	LogLevel          string
+	LogSampleRate     float64
+	SlowRequestMS     int
 }
 
 // Load 从环境变量加载配置；未设置时使用本地开发默认值。
@@ -45,6 +51,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	logSampleRate, err := getEnvFloat01("RELAYFLOW_LOG_SAMPLE_RATE", defaultLogSampleRate)
+	if err != nil {
+		return Config{}, err
+	}
+	slowRequestMS, err := getEnvInt("RELAYFLOW_SLOW_REQUEST_MS", defaultSlowRequestMS)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		RabbitMQURL:       getEnv("RELAYFLOW_RABBITMQ_URL", defaultRabbitMQURL),
@@ -55,6 +69,9 @@ func Load() (Config, error) {
 		AgentTimeout:      time.Duration(agentTimeoutSeconds) * time.Second,
 		WorkerConcurrency: workerConcurrency,
 		MaxAttempts:       maxAttempts,
+		LogLevel:          getEnv("RELAYFLOW_LOG_LEVEL", defaultLogLevel),
+		LogSampleRate:     logSampleRate,
+		SlowRequestMS:     slowRequestMS,
 	}, nil
 }
 
@@ -98,6 +115,24 @@ func getEnvIntAllowZero(key string, fallback int) (int, error) {
 	}
 	if parsed < 0 {
 		return 0, fmt.Errorf("%s must be greater than or equal to 0", key)
+	}
+
+	return parsed, nil
+}
+
+// getEnvFloat01 读取 0 到 1 之间的浮点数；用于控制正常请求日志采样率。
+func getEnvFloat01(key string, fallback float64) (float64, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", key, err)
+	}
+	if parsed < 0 || parsed > 1 {
+		return 0, fmt.Errorf("%s must be between 0 and 1", key)
 	}
 
 	return parsed, nil

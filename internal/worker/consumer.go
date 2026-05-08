@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"relay-flow/internal/event"
+	"relay-flow/internal/logger"
 	"relay-flow/internal/observability"
 	"relay-flow/internal/queue"
 )
@@ -139,7 +140,7 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		attribute.Int("attempt", task.Attempt),
 	)
 
-	slog.Info("task received", "run_id", task.RunID, "agent_id", task.AgentID, "attempt", task.Attempt)
+	slog.Debug("task received", "run_id", task.RunID, "agent_id", task.AgentID, "attempt", task.Attempt)
 	baseSeq := attemptBaseSeq(task.Attempt)
 	if err := c.publishRunEvent(ctx, task.RunID, baseSeq, event.EventTypeRunning, "任务开始执行", nil); err != nil {
 		span.RecordError(err)
@@ -156,19 +157,19 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 			return err
 		}
 		if !ok {
-			slog.Info("agent event ignored", "run_id", task.RunID, "event_type", raw.Type)
+			slog.Debug("agent event ignored", "run_id", task.RunID, "event_type", raw.Type)
 			return nil
 		}
 		if err := c.eventPublisher.PublishRunEvent(ctx, evt); err != nil {
 			return fmt.Errorf("publish adapted run event: %w", err)
 		}
-		slog.Info("agent event published", "run_id", task.RunID, "seq", evt.Seq, "type", evt.Type)
+		slog.Debug("agent event published", "run_id", task.RunID, "seq", evt.Seq, "type", evt.Type)
 		return nil
 	}); err != nil {
 		span.RecordError(err)
-		slog.Error("task execution failed", "run_id", task.RunID, "attempt", task.Attempt, "err", err)
+		logger.ErrorContext(ctx, "task execution failed", "run_id", task.RunID, "attempt", task.Attempt, "err", err)
 		if errors.Is(err, ErrAgentFailedEvent) {
-			slog.Info("agent failed event already published", "run_id", task.RunID)
+			slog.Debug("agent failed event already published", "run_id", task.RunID)
 			c.nackDelivery(delivery, false)
 			return
 		}
@@ -180,10 +181,10 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 	if err := c.ackDelivery(delivery); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "ack task failed")
-		slog.Error("ack task failed", "run_id", task.RunID, "err", err)
+		logger.ErrorContext(ctx, "ack task failed", "run_id", task.RunID, "err", err)
 		return
 	}
-	slog.Info("task acked", "run_id", task.RunID)
+	slog.Debug("task acked", "run_id", task.RunID)
 }
 
 // ackDelivery 串行化 ACK，避免多个 goroutine 同时操作同一个 AMQP channel。
@@ -210,7 +211,7 @@ func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery
 	canRetry := isRetryableAgentError(errKind) && task.Attempt < c.maxAttempts
 	if errKind == agentErrorTimeout {
 		if publishErr := c.publishErrorEvent(ctx, task.RunID, seq, event.EventTypeTimeout, "Agent 调用超时", err); publishErr != nil {
-			slog.Error("publish timeout event failed", "run_id", task.RunID, "err", publishErr)
+			logger.ErrorContext(ctx, "publish timeout event failed", "run_id", task.RunID, "err", publishErr)
 		}
 		seq++
 	}
@@ -219,7 +220,7 @@ func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery
 		// Worker 自己判定不可重试或重试耗尽时，dead_letter 就是最终失败事件。
 		// 这里不再额外发布 failed，避免同一个 Run 同时出现 failed + dead_letter 后被指标双计数。
 		if publishErr := c.publishDeadLetter(ctx, task, seq, err); publishErr != nil {
-			slog.Error("publish dead letter failed", "run_id", task.RunID, "err", publishErr)
+			logger.ErrorContext(ctx, "publish dead letter failed", "run_id", task.RunID, "err", publishErr)
 			c.nackDelivery(delivery, true)
 			return
 		}
@@ -232,13 +233,13 @@ func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery
 	delay := retryDelay(task.Attempt)
 	if publishErr := c.publishRetrying(ctx, nextTask, seq, delay, err); publishErr != nil {
 		span.RecordError(publishErr)
-		slog.Error("publish retrying failed", "run_id", task.RunID, "err", publishErr)
+		logger.ErrorContext(ctx, "publish retrying failed", "run_id", task.RunID, "err", publishErr)
 		c.nackDelivery(delivery, true)
 		return
 	}
 	if err := c.taskPublisher.PublishRetryTask(ctx, nextTask, delay); err != nil {
 		span.RecordError(err)
-		slog.Error("publish retry task failed", "run_id", task.RunID, "err", err)
+		logger.ErrorContext(ctx, "publish retry task failed", "run_id", task.RunID, "err", err)
 		c.nackDelivery(delivery, true)
 		return
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,8 +18,21 @@ import (
 
 // Gateway 负责接收外部 HTTP/SSE 请求，并把任务投递到后端队列。
 func main() {
-	if err := logger.Init("gateway"); err != nil {
-		slog.Error("init logger failed", "err", err)
+	// Gateway/Worker 读取同一套环境变量，保证本地、Docker、生产部署切换时只换配置不换代码。
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config failed:", err)
+		os.Exit(1)
+	}
+
+	if err := logger.InitWithOptions(logger.Options{
+		Service:       "gateway",
+		LogDir:        "logs",
+		Level:         cfg.LogLevel,
+		SampleRate:    cfg.LogSampleRate,
+		SlowRequestMS: cfg.SlowRequestMS,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "init logger failed:", err)
 		os.Exit(1)
 	}
 	observability.RegisterMetrics()
@@ -32,13 +46,6 @@ func main() {
 			slog.Error("shutdown tracing failed", "err", err)
 		}
 	}()
-
-	// Gateway/Worker 读取同一套环境变量，保证本地、Docker、生产部署切换时只换配置不换代码。
-	cfg, err := config.Load()
-	if err != nil {
-		slog.Error("load config failed", "err", err)
-		os.Exit(1)
-	}
 
 	slog.Info("gateway started",
 		"rabbitmq", cfg.RabbitMQURL,
@@ -92,6 +99,10 @@ func main() {
 		Store:     runStore,
 		Publisher: taskPublisher,
 		SSEHub:    sseHub,
+		LogConfig: logger.HTTPLogConfig{
+			SampleRate:  cfg.LogSampleRate,
+			SlowRequest: time.Duration(cfg.SlowRequestMS) * time.Millisecond,
+		},
 	})
 	httpServer := &http.Server{
 		Addr:    cfg.GatewayAddr,

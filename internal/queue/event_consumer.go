@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"relay-flow/internal/event"
+	"relay-flow/internal/logger"
 	"relay-flow/internal/observability"
 )
 
@@ -99,7 +100,7 @@ func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delive
 	if err := json.Unmarshal(delivery.Body, &evt); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "decode run event failed")
-		slog.Error("decode run event failed", "err", err)
+		logger.ErrorContext(ctx, "decode run event failed", "err", err)
 		_ = delivery.Nack(false, false)
 		return
 	}
@@ -112,7 +113,7 @@ func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delive
 	if err := c.store.AppendRunEvent(ctx, evt); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "persist run event failed")
-		slog.Error("persist run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
+		logger.ErrorContext(ctx, "persist run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
 		_ = delivery.Nack(false, false)
 		return
 	}
@@ -123,7 +124,7 @@ func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delive
 	if err := delivery.Ack(false); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "ack run event failed")
-		slog.Error("ack run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
+		logger.ErrorContext(ctx, "ack run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
 		return
 	}
 	switch evt.Type {
@@ -135,5 +136,5 @@ func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delive
 		observability.TaskFailedTotal.Inc()
 		observability.DLQTotal.Inc()
 	}
-	slog.Info("run event persisted", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type)
+	slog.Debug("run event persisted", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type)
 }

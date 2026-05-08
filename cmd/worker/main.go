@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,8 +18,19 @@ import (
 
 // Worker 负责消费队列任务、调用 Agent 服务，并回传执行状态。
 func main() {
-	if err := logger.Init("worker"); err != nil {
-		slog.Error("init logger failed", "err", err)
+	// 和 Gateway 复用同一套基础配置，避免两类进程对外部依赖的理解不一致。
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config failed:", err)
+		os.Exit(1)
+	}
+
+	if err := logger.InitWithOptions(logger.Options{
+		Service: "worker",
+		LogDir:  "logs",
+		Level:   cfg.LogLevel,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "init logger failed:", err)
 		os.Exit(1)
 	}
 	observability.RegisterMetrics()
@@ -32,13 +44,6 @@ func main() {
 			slog.Error("shutdown tracing failed", "err", err)
 		}
 	}()
-
-	// 和 Gateway 复用同一套基础配置，避免两类进程对外部依赖的理解不一致。
-	cfg, err := config.Load()
-	if err != nil {
-		slog.Error("load config failed", "err", err)
-		os.Exit(1)
-	}
 
 	slog.Info("worker started",
 		"rabbitmq", cfg.RabbitMQURL,
