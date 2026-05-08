@@ -19,7 +19,7 @@ docker compose -f docker-compose.relay.yml up -d --build
 启动 Locust：
 
 ```bash
-locust -f tests/load/locustfile.py --host http://127.0.0.1:8080
+locust -f tests/load/locustfile.py --host http://127.0.0.1:8080 --web-host 127.0.0.1
 ```
 
 打开 Web UI：
@@ -42,6 +42,7 @@ GET /v1/runs/{run_id}/events
 ```bash
 locust -f tests/load/locustfile.py \
   --host http://127.0.0.1:8080 \
+  --web-host 127.0.0.1 \
   --headless \
   -u 1000 \
   -r 100

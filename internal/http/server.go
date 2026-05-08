@@ -12,9 +12,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"relay-flow/internal/event"
 	"relay-flow/internal/logger"
+	"relay-flow/internal/observability"
 	"relay-flow/internal/queue"
 	"relay-flow/internal/store"
 )
@@ -75,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) registerRoutes() {
 	s.router.GET("/healthz", s.handleHealthz)
 	s.router.GET("/readyz", s.handleReadyz)
+	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	s.router.POST("/v1/runs", s.handleCreateRun)
 	s.router.GET("/v1/runs/:run_id", s.handleGetRun)
 	s.router.GET("/v1/runs/:run_id/events", s.handleRunEvents)
@@ -100,20 +105,29 @@ type createRunRequest struct {
 
 // handleCreateRun 创建 queued Run，并把任务投递给 Worker。
 func (s *Server) handleCreateRun(c *gin.Context) {
+	ctx, span := observability.Tracer().Start(c.Request.Context(), "gateway.create_run")
+	defer span.End()
+
 	var req createRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "invalid json body")
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json body"})
 		return
 	}
 	if req.AgentID == "" {
 		err := fmt.Errorf("agent_id is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if len(req.Input) == 0 || string(req.Input) == "null" {
 		err := fmt.Errorf("input is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -122,10 +136,13 @@ func (s *Server) handleCreateRun(c *gin.Context) {
 	now := time.Now().UTC()
 	runID, err := newRunID()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "generate run id failed")
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate run id failed"})
 		return
 	}
+	span.SetAttributes(attribute.String("run_id", runID), attribute.String("agent_id", req.AgentID))
 
 	run := store.RunRecord{
 		RunID:     runID,
@@ -135,7 +152,9 @@ func (s *Server) handleCreateRun(c *gin.Context) {
 		CreatedAt: now,
 	}
 	// 先写 Redis 再发消息，保证调用方拿到 run_id 后能查到初始状态。
-	if err := s.store.CreateRunQueued(c.Request.Context(), run); err != nil {
+	if err := s.store.CreateRunQueued(ctx, run); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "create run failed")
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create run failed"})
 		return
@@ -149,11 +168,14 @@ func (s *Server) handleCreateRun(c *gin.Context) {
 		CreatedAt: now,
 		Attempt:   1,
 	}
-	if err := s.publisher.PublishTask(c.Request.Context(), task); err != nil {
+	if err := s.publisher.PublishTask(ctx, task); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "publish task failed")
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "publish task failed"})
 		return
 	}
+	observability.TaskSubmittedTotal.Inc()
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"run_id": runID,
@@ -163,9 +185,14 @@ func (s *Server) handleCreateRun(c *gin.Context) {
 
 // handleGetRun 查询 Run 当前状态、最终结果和最近事件。
 func (s *Server) handleGetRun(c *gin.Context) {
+	ctx, span := observability.Tracer().Start(c.Request.Context(), "gateway.get_run")
+	defer span.End()
+
 	runID := c.Param("run_id")
 	if runID == "" {
 		err := fmt.Errorf("run_id is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -173,17 +200,22 @@ func (s *Server) handleGetRun(c *gin.Context) {
 
 	eventsLimit, err := parseEventsLimit(c.Query("events_limit"))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	detail, err := s.store.GetRunDetail(c.Request.Context(), runID, eventsLimit)
+	span.SetAttributes(attribute.String("run_id", runID))
+	detail, err := s.store.GetRunDetail(ctx, runID, eventsLimit)
 	if err != nil {
 		if errors.Is(err, store.ErrRunNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
 			return
 		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "get run failed")
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
 		return
@@ -195,29 +227,42 @@ func (s *Server) handleGetRun(c *gin.Context) {
 // handleRunEvents 通过 SSE 推送指定 Run 的历史事件和实时事件。
 // 建连后先注册本机 Hub，再读取 Redis 历史事件，并用 seq 去重避免注册期间产生重复事件。
 func (s *Server) handleRunEvents(c *gin.Context) {
+	ctx, span := observability.Tracer().Start(c.Request.Context(), "gateway.sse_events")
+	defer span.End()
+
 	runID := c.Param("run_id")
 	if runID == "" {
 		err := fmt.Errorf("run_id is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	span.SetAttributes(attribute.String("run_id", runID))
+	observability.SSEConnections.Inc()
+	defer observability.SSEConnections.Dec()
+	defer observability.SSEDisconnectsTotal.Inc()
 
 	sub := s.sseHub.Subscribe(runID)
 	defer sub.Close()
 
-	if _, err := s.store.GetRunDetail(c.Request.Context(), runID, 0); err != nil {
+	if _, err := s.store.GetRunDetail(ctx, runID, 0); err != nil {
 		if errors.Is(err, store.ErrRunNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
 			return
 		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "get run failed")
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
 		return
 	}
 
-	events, err := s.store.ListRunEvents(c.Request.Context(), runID)
+	events, err := s.store.ListRunEvents(ctx, runID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "list run events failed")
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "list run events failed"})
 		return
@@ -235,7 +280,8 @@ func (s *Server) handleRunEvents(c *gin.Context) {
 
 	var lastSeq int64
 	for _, evt := range events {
-		if err := writeSSEEvent(c, evt); err != nil {
+		if err := writeSSEEvent(ctx, c, evt); err != nil {
+			span.RecordError(err)
 			_ = c.Error(err)
 			return
 		}
@@ -267,7 +313,8 @@ func (s *Server) handleRunEvents(c *gin.Context) {
 			if evt.Seq <= lastSeq {
 				continue
 			}
-			if err := writeSSEEvent(c, evt); err != nil {
+			if err := writeSSEEvent(ctx, c, evt); err != nil {
+				span.RecordError(err)
 				_ = c.Error(err)
 				return
 			}
@@ -317,16 +364,30 @@ func prepareSSEHeaders(c *gin.Context) {
 }
 
 // writeSSEEvent 把标准 RunEvent 写成 SSE event/data 格式。
-func writeSSEEvent(c *gin.Context, evt event.RunEvent) error {
+func writeSSEEvent(ctx context.Context, c *gin.Context, evt event.RunEvent) error {
+	_, span := observability.Tracer().Start(ctx, "gateway.sse_write")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("run_id", evt.RunID),
+		attribute.Int64("event.seq", evt.Seq),
+		attribute.String("event.type", string(evt.Type)),
+	)
+
 	body, err := json.Marshal(evt)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal sse event")
 		return fmt.Errorf("marshal sse event: %w", err)
 	}
 
 	if _, err := fmt.Fprintf(c.Writer, "event: %s\n", evt.Type); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "write sse event type")
 		return fmt.Errorf("write sse event type: %w", err)
 	}
 	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", body); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "write sse event data")
 		return fmt.Errorf("write sse event data: %w", err)
 	}
 	return nil

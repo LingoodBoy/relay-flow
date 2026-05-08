@@ -7,8 +7,10 @@ import (
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
 
 	"relay-flow/internal/event"
+	"relay-flow/internal/observability"
 )
 
 // EventPublisher 负责把 RunEvent 发布到 RabbitMQ event exchange。
@@ -50,6 +52,14 @@ func (p *EventPublisher) Close() error {
 
 // PublishRunEvent 把标准 RunEvent 发布到 event exchange。
 func (p *EventPublisher) PublishRunEvent(ctx context.Context, evt event.RunEvent) error {
+	ctx, span := observability.Tracer().Start(ctx, "rabbitmq.publish_run_event")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("run_id", evt.RunID),
+		attribute.Int64("event.seq", evt.Seq),
+		attribute.String("event.type", string(evt.Type)),
+	)
+
 	body, err := json.Marshal(evt)
 	if err != nil {
 		return fmt.Errorf("marshal run event: %w", err)
@@ -69,6 +79,7 @@ func (p *EventPublisher) PublishRunEvent(ctx context.Context, evt event.RunEvent
 			MessageId:    fmt.Sprintf("%s:%d", evt.RunID, evt.Seq),
 			Timestamp:    evt.CreatedAt,
 			Type:         string(evt.Type),
+			Headers:      observability.InjectAMQPHeaders(ctx, nil),
 			Body:         body,
 		},
 	); err != nil {

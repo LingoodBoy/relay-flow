@@ -13,6 +13,7 @@ const (
 	defaultRedisAddr          = "localhost:6379"
 	defaultAgentHTTPURL       = "http://localhost:8000"
 	defaultGatewayAddr        = ":8080"
+	defaultWorkerMetricsAddr  = ":9091"
 	defaultAgentTimeoutSecond = 0
 	defaultWorkerConcurrency  = 20
 	defaultMaxAttempts        = 3
@@ -24,6 +25,7 @@ type Config struct {
 	RedisAddr         string
 	AgentURL          string
 	GatewayAddr       string
+	WorkerMetricsAddr string
 	AgentTimeout      time.Duration
 	WorkerConcurrency int
 	MaxAttempts       int
@@ -49,6 +51,7 @@ func Load() (Config, error) {
 		RedisAddr:         getEnv("RELAYFLOW_REDIS_ADDR", defaultRedisAddr),
 		AgentURL:          getEnv("RELAYFLOW_AGENT_URL", defaultAgentHTTPURL),
 		GatewayAddr:       getEnv("RELAYFLOW_GATEWAY_ADDR", defaultGatewayAddr),
+		WorkerMetricsAddr: getEnv("RELAYFLOW_WORKER_METRICS_ADDR", defaultWorkerMetricsAddr),
 		AgentTimeout:      time.Duration(agentTimeoutSeconds) * time.Second,
 		WorkerConcurrency: workerConcurrency,
 		MaxAttempts:       maxAttempts,

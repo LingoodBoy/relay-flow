@@ -108,6 +108,8 @@ func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 		nil,
 	); err != nil {
 		return fmt.Errorf("declare task queue: %w", err)
+	} else {
+		ObserveQueueMessages(ch, TaskQueue)
 	}
 
 	if err := ch.ExchangeDeclare(
@@ -134,6 +136,8 @@ func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 		},
 	); err != nil {
 		return fmt.Errorf("declare retry queue: %w", err)
+	} else {
+		ObserveQueueMessages(ch, RetryQueue)
 	}
 
 	if err := ch.QueueBind(
@@ -167,6 +171,8 @@ func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 		nil,
 	); err != nil {
 		return fmt.Errorf("declare dlq: %w", err)
+	} else {
+		ObserveQueueMessages(ch, DLQQueue)
 	}
 
 	if err := ch.QueueBind(
@@ -216,6 +222,8 @@ func declareEventTopologyWithChannel(ch *amqp.Channel) error {
 		nil,
 	); err != nil {
 		return fmt.Errorf("declare event persist queue: %w", err)
+	} else {
+		ObserveQueueMessages(ch, EventPersistQueue)
 	}
 
 	// 持久化队列绑定 run.#.event，用于消费所有 Run 的阶段事件并落 Redis。

@@ -51,18 +51,26 @@ class SSEUser(HttpUser):
     @task
     def submit_and_subscribe(self) -> None:
         try:
-            create_resp = self.client.post(
+            with self.client.post(
                 "/v1/runs",
                 json=build_run_payload(),
                 name="POST /v1/runs",
-            )
-            if create_resp.status_code != 202:
-                return
+                catch_response=True,
+            ) as create_resp:
+                if create_resp.error:
+                    create_resp.failure(create_resp.error)
+                    return
+                if create_resp.status_code != 202:
+                    create_resp.failure(f"unexpected status {create_resp.status_code}: {create_resp.text[:200]}")
+                    return
 
-            try:
-                run_id = create_resp.json()["run_id"]
-            except (KeyError, json.JSONDecodeError):
-                return
+                try:
+                    run_id = create_resp.json()["run_id"]
+                except (KeyError, json.JSONDecodeError) as exc:
+                    create_resp.failure(f"invalid create run response: {exc}")
+                    return
+
+                create_resp.success()
 
             event_count = 0
             terminal_seen = False
@@ -83,7 +91,7 @@ class SSEUser(HttpUser):
 
                     for event_type, data in iter_sse_events(response.iter_lines()):
                         event_count += 1
-                        if event_type in ("succeeded", "failed"):
+                        if event_type in ("succeeded", "failed", "dead_letter"):
                             terminal_seen = True
                             break
 

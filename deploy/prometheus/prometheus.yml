@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: relayflow-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - gateway:8080
+
+  - job_name: relayflow-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - worker:9091

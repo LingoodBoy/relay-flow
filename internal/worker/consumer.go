@@ -13,8 +13,11 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"relay-flow/internal/event"
+	"relay-flow/internal/observability"
 	"relay-flow/internal/queue"
 )
 
@@ -100,6 +103,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 			if !ok {
 				return fmt.Errorf("task delivery channel closed")
 			}
+			queue.ObserveQueueMessages(c.ch, queue.TaskQueue)
 			sem <- struct{}{}
 			go func() {
 				defer func() { <-sem }()
@@ -111,8 +115,16 @@ func (c *Consumer) Run(ctx context.Context) error {
 
 // handleDelivery 处理单条任务消息，并根据执行结果 ACK 或 NACK。
 func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
+	ctx = observability.ExtractAMQPContext(ctx, delivery.Headers)
+	ctx, span := observability.Tracer().Start(ctx, "worker.consume_task")
+	defer span.End()
+	observability.WorkerRunningTasks.Inc()
+	defer observability.WorkerRunningTasks.Dec()
+
 	var task queue.TaskMessage
 	if err := json.Unmarshal(delivery.Body, &task); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "decode task message failed")
 		// 消息格式错误通常不是临时故障，重新入队也大概率继续失败，所以直接丢弃。
 		slog.Error("decode task message failed", "err", err)
 		c.nackDelivery(delivery, false)
@@ -121,10 +133,17 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 	if task.Attempt == 0 {
 		task.Attempt = 1
 	}
+	span.SetAttributes(
+		attribute.String("run_id", task.RunID),
+		attribute.String("agent_id", task.AgentID),
+		attribute.Int("attempt", task.Attempt),
+	)
 
 	slog.Info("task received", "run_id", task.RunID, "agent_id", task.AgentID, "attempt", task.Attempt)
 	baseSeq := attemptBaseSeq(task.Attempt)
 	if err := c.publishRunEvent(ctx, task.RunID, baseSeq, event.EventTypeRunning, "任务开始执行", nil); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "publish running event failed")
 		slog.Error("publish running event failed", "run_id", task.RunID, "err", err)
 		c.nackDelivery(delivery, false)
 		return
@@ -146,6 +165,7 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 		slog.Info("agent event published", "run_id", task.RunID, "seq", evt.Seq, "type", evt.Type)
 		return nil
 	}); err != nil {
+		span.RecordError(err)
 		slog.Error("task execution failed", "run_id", task.RunID, "attempt", task.Attempt, "err", err)
 		if errors.Is(err, ErrAgentFailedEvent) {
 			slog.Info("agent failed event already published", "run_id", task.RunID)
@@ -158,6 +178,8 @@ func (c *Consumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
 
 	// 只有 Agent 成功返回后才 ACK，确保队列语义是“至少处理到 Agent 调用完成”。
 	if err := c.ackDelivery(delivery); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "ack task failed")
 		slog.Error("ack task failed", "run_id", task.RunID, "err", err)
 		return
 	}
@@ -180,6 +202,10 @@ func (c *Consumer) nackDelivery(delivery amqp.Delivery, requeue bool) {
 
 // handleTaskFailure 根据错误类型决定补发事件、延迟重试或进入死信队列。
 func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery, task queue.TaskMessage, seq int64, err error) {
+	ctx, span := observability.Tracer().Start(ctx, "worker.handle_task_failure")
+	defer span.End()
+	span.SetAttributes(attribute.String("run_id", task.RunID), attribute.Int("attempt", task.Attempt))
+
 	errKind := classifyAgentError(err)
 	canRetry := isRetryableAgentError(errKind) && task.Attempt < c.maxAttempts
 	if errKind == agentErrorTimeout {
@@ -187,14 +213,11 @@ func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery
 			slog.Error("publish timeout event failed", "run_id", task.RunID, "err", publishErr)
 		}
 		seq++
-	} else if !canRetry {
-		if publishErr := c.publishErrorEvent(ctx, task.RunID, seq, event.EventTypeFailed, "任务执行失败", err); publishErr != nil {
-			slog.Error("publish failed event failed", "run_id", task.RunID, "err", publishErr)
-		}
-		seq++
 	}
 
 	if !canRetry {
+		// Worker 自己判定不可重试或重试耗尽时，dead_letter 就是最终失败事件。
+		// 这里不再额外发布 failed，避免同一个 Run 同时出现 failed + dead_letter 后被指标双计数。
 		if publishErr := c.publishDeadLetter(ctx, task, seq, err); publishErr != nil {
 			slog.Error("publish dead letter failed", "run_id", task.RunID, "err", publishErr)
 			c.nackDelivery(delivery, true)
@@ -208,17 +231,20 @@ func (c *Consumer) handleTaskFailure(ctx context.Context, delivery amqp.Delivery
 	nextTask.Attempt++
 	delay := retryDelay(task.Attempt)
 	if publishErr := c.publishRetrying(ctx, nextTask, seq, delay, err); publishErr != nil {
+		span.RecordError(publishErr)
 		slog.Error("publish retrying failed", "run_id", task.RunID, "err", publishErr)
 		c.nackDelivery(delivery, true)
 		return
 	}
 	if err := c.taskPublisher.PublishRetryTask(ctx, nextTask, delay); err != nil {
+		span.RecordError(err)
 		slog.Error("publish retry task failed", "run_id", task.RunID, "err", err)
 		c.nackDelivery(delivery, true)
 		return
 	}
 
 	c.ackOrLog(delivery, task.RunID)
+	observability.RetryTotal.Inc()
 }
 
 // publishRunEvent 构造并发布 Worker 基础事件。

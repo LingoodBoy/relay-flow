@@ -12,8 +12,34 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
+	"relay-flow/internal/observability"
 	"relay-flow/internal/queue"
 )
+
+type propagationHeaderCarrier http.Header
+
+// Get 按 OpenTelemetry TextMapCarrier 接口读取 HTTP Header。
+func (c propagationHeaderCarrier) Get(key string) string {
+	return http.Header(c).Get(key)
+}
+
+// Set 按 OpenTelemetry TextMapCarrier 接口写入 HTTP Header。
+func (c propagationHeaderCarrier) Set(key string, value string) {
+	http.Header(c).Set(key, value)
+}
+
+// Keys 返回当前 HTTP Header 中已有的键。
+func (c propagationHeaderCarrier) Keys() []string {
+	keys := make([]string, 0, len(c))
+	for key := range c {
+		keys = append(keys, key)
+	}
+	return keys
+}
 
 // ErrAgentFailedEvent 表示 Agent 已经通过 SSE 主动返回 failed 事件。
 // 调用方可以据此避免再补发一条重复的 failed RunEvent。
@@ -63,6 +89,14 @@ func NewAgentClient(baseURL string, timeout time.Duration) *AgentClient {
 // StreamEvents 调用 Agent 的 POST /invoke/events 接口，并逐条读取 SSE 阶段事件。
 // Agent 只输出自己的业务事件，不需要知道 RelayFlow 的 run_id、seq 或存储细节。
 func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, handle func(AgentRawEvent) error) error {
+	ctx, span := observability.Tracer().Start(ctx, "worker.agent_invoke_events")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("run_id", task.RunID),
+		attribute.String("agent_id", task.AgentID),
+		attribute.String("http.url", c.baseURL+"/invoke/events"),
+	)
+
 	if c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
@@ -74,27 +108,38 @@ func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, 
 		"agent_type": task.AgentID,
 	})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal agent request")
 		return AgentInvalidRequestError{Message: fmt.Sprintf("marshal agent event request: %v", err)}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/invoke/events", bytes.NewReader(body))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "create agent request")
 		return AgentInvalidRequestError{Message: fmt.Sprintf("create agent event request: %v", err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	otel.GetTextMapPropagator().Inject(ctx, propagationHeaderCarrier(req.Header))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "call agent")
 		return fmt.Errorf("call agent invoke events: %w", err)
 	}
 	defer resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		respBody, readErr := io.ReadAll(resp.Body)
 		if readErr != nil {
+			span.RecordError(readErr)
+			span.SetStatus(codes.Error, "read agent error response")
 			return fmt.Errorf("read agent event error response: %w", readErr)
 		}
+		span.SetStatus(codes.Error, "agent returned error status")
 		return AgentStatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
@@ -112,9 +157,12 @@ func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, 
 					Data: eventData,
 				}
 				if err := handle(raw); err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "handle agent event")
 					return err
 				}
 				if eventType == "failed" {
+					span.SetStatus(codes.Error, "agent returned failed event")
 					return fmt.Errorf("%w: %s", ErrAgentFailedEvent, string(eventData))
 				}
 				if eventType == "succeeded" {
@@ -135,9 +183,12 @@ func (c *AgentClient) StreamEvents(ctx context.Context, task queue.TaskMessage, 
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read agent stream")
 		return fmt.Errorf("read agent event stream: %w", err)
 	}
 	if !succeeded {
+		span.SetStatus(codes.Error, "agent stream ended without succeeded")
 		return AgentInvalidRequestError{Message: "agent event stream ended without succeeded event"}
 	}
 	return nil

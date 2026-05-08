@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"relay-flow/internal/config"
 	"relay-flow/internal/logger"
+	"relay-flow/internal/observability"
 	"relay-flow/internal/queue"
 	workerpkg "relay-flow/internal/worker"
 )
@@ -17,6 +21,17 @@ func main() {
 		slog.Error("init logger failed", "err", err)
 		os.Exit(1)
 	}
+	observability.RegisterMetrics()
+	shutdownTracing, err := observability.InitTracing(context.Background(), "relayflow-worker")
+	if err != nil {
+		slog.Error("init tracing failed", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			slog.Error("shutdown tracing failed", "err", err)
+		}
+	}()
 
 	// 和 Gateway 复用同一套基础配置，避免两类进程对外部依赖的理解不一致。
 	cfg, err := config.Load()
@@ -32,7 +47,9 @@ func main() {
 		"agent_timeout", cfg.AgentTimeout,
 		"concurrency", cfg.WorkerConcurrency,
 		"max_attempts", cfg.MaxAttempts,
+		"metrics_addr", cfg.WorkerMetricsAddr,
 	)
+	go serveMetrics(cfg.WorkerMetricsAddr)
 
 	// Worker 也声明拓扑是为了支持独立部署：即使 Gateway 暂时没启动，Worker 也能自检队列结构。
 	// RabbitMQ 声明是幂等的，参数一致时不会覆盖已有 exchange/queue/message。
@@ -71,5 +88,14 @@ func main() {
 	if err := consumer.Run(context.Background()); err != nil {
 		slog.Error("worker consumer stopped", "err", err)
 		os.Exit(1)
+	}
+}
+
+// serveMetrics 为 Worker 暴露 Prometheus 指标，避免 Gateway 与 Worker 指标混在同一个进程端口。
+func serveMetrics(addr string) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		slog.Error("worker metrics server stopped", "err", err)
 	}
 }

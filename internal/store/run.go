@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	defaultRedisPoolSize = 1024
+
 	StatusQueued     = "queued"
 	StatusRunning    = "running"
 	StatusSucceeded  = "succeeded"
@@ -52,7 +54,10 @@ type RedisStore struct {
 // NewRedisStore 创建 Redis 状态存储客户端。
 func NewRedisStore(redisAddr string) *RedisStore {
 	return &RedisStore{
-		client: redis.NewClient(&redis.Options{Addr: redisAddr}),
+		client: redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			PoolSize: defaultRedisPoolSize,
+		}),
 	}
 }
 

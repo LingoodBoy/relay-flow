@@ -74,9 +74,51 @@ Gateway Event Consumer           Gateway SSE 临时队列
 Redis                            Frontend
 ```
 # 快速开始
-docker compose -f docker-compose.infra.yml up -d
-docker compose -f docker-compose.agent.yml up -d --build
-docker compose -f docker-compose.relay.yml up -d --build
+docker compose -f docker-compose.infra.yml up 
+docker compose -f docker-compose.agent.yml up --build
+docker compose -f docker-compose.relay.yml up --build
+# 清理资源
+
+docker compose -f docker-compose.infra.yml rm -sf prometheus
+## 需开启 docker compose -f docker-compose.infra.yml up 
+docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.task.queue
+docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.retry.queue
+docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.dlq
+docker exec relayflow-rabbitmq-1 rabbitmqctl purge_queue relayflow.event.persist.queue
+
+docker exec relayflow-redis-1 redis-cli FLUSHDB
+
+
+# 资源地址
+Gateway API:
+http://127.0.0.1:8080
+
+Gateway metrics:
+http://127.0.0.1:8080/metrics
+
+Worker metrics:
+http://127.0.0.1:9091/metrics
+
+RabbitMQ 管理台:
+http://127.0.0.1:15672
+账号/密码: guest / guest
+
+Prometheus:
+http://127.0.0.1:9090
+
+Grafana:
+http://127.0.0.1:3000
+账号/密码: admin / admin
+
+Jaeger:
+http://127.0.0.1:16686
+
+FastAPI Agent:
+http://127.0.0.1:8000
+
+FastAPI Agent docs:
+http://127.0.0.1:8000/docs
+
 
 # 停止
 docker compose -f docker-compose.relay.yml down

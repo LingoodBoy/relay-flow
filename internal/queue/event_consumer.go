@@ -7,8 +7,11 @@ import (
 	"log/slog"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"relay-flow/internal/event"
+	"relay-flow/internal/observability"
 )
 
 type RunEventStore interface {
@@ -88,14 +91,27 @@ func (c *EventConsumer) Run(ctx context.Context) error {
 
 // handleDelivery 解码并持久化单条 RunEvent。
 func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delivery) {
+	ctx = observability.ExtractAMQPContext(ctx, delivery.Headers)
+	ctx, span := observability.Tracer().Start(ctx, "gateway.consume_run_event")
+	defer span.End()
+
 	var evt event.RunEvent
 	if err := json.Unmarshal(delivery.Body, &evt); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "decode run event failed")
 		slog.Error("decode run event failed", "err", err)
 		_ = delivery.Nack(false, false)
 		return
 	}
+	span.SetAttributes(
+		attribute.String("run_id", evt.RunID),
+		attribute.Int64("event.seq", evt.Seq),
+		attribute.String("event.type", string(evt.Type)),
+	)
 
 	if err := c.store.AppendRunEvent(ctx, evt); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "persist run event failed")
 		slog.Error("persist run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
 		_ = delivery.Nack(false, false)
 		return
@@ -105,8 +121,19 @@ func (c *EventConsumer) handleDelivery(ctx context.Context, delivery amqp.Delive
 	}
 
 	if err := delivery.Ack(false); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "ack run event failed")
 		slog.Error("ack run event failed", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type, "err", err)
 		return
+	}
+	switch evt.Type {
+	case event.EventTypeSucceeded:
+		observability.TaskSucceededTotal.Inc()
+	case event.EventTypeFailed:
+		observability.TaskFailedTotal.Inc()
+	case event.EventTypeDeadLetter:
+		observability.TaskFailedTotal.Inc()
+		observability.DLQTotal.Inc()
 	}
 	slog.Info("run event persisted", "run_id", evt.RunID, "seq", evt.Seq, "type", evt.Type)
 }
