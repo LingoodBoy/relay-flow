@@ -55,3 +55,34 @@ AGENT_ID=langgraph
 PROMPT=帮我查一下北京今天的天气
 SSE_TIMEOUT_SECONDS=600
 ```
+
+## Go SSEBench
+
+`tools/ssebench` 是针对 RelayFlow 的专用 Go 压测器。它不模拟复杂用户行为，只执行一次完整链路：
+
+```text
+POST /v1/runs
+GET /v1/runs/{run_id}/events
+等待 succeeded / failed / dead_letter
+```
+
+启动 15000 个一次性用户：
+
+```bash
+go run ./tools/ssebench \
+  -host http://127.0.0.1:8080 \
+  -users 15000 \
+  -spawn-rate 500 \
+  -timeout 30m
+```
+
+输出会包含类似 Locust 的统计表：
+
+```text
+Type    Name                          # Requests  # Fails  Median (ms)  95%ile (ms)  99%ile (ms)
+POST    POST /v1/runs                 ...
+GET     GET /v1/runs/:run_id/events   ...
+SSE     events received               ...
+```
+
+压测过程中会在进度行显示当前最多的失败原因，结束后会输出 `Failures` 聚合表，用于定位连接失败、非预期状态码和 SSE 异常结束等问题。
