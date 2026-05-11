@@ -1,5 +1,7 @@
 # RelayFlow
 
+[中文](README.md) | [English](README_EN.md)
+
 RelayFlow 是一个面向长耗时 Agent 任务的可靠异步中继层，用来把低并发、长耗时、稳定性不可控的 Agent 服务包装成可排队、可重试、可查询、可观测的异步任务流。
 
 它的核心目标是把前端高并发连接压力和后端 Agent 执行压力解耦：Gateway 负责接收 HTTP/SSE 请求并快速入队，Worker 按配置的并发度消费任务并调用 Agent，从而让不可控的突发流量变成可控的后台执行。

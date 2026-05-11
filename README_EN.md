@@ -1,5 +1,7 @@
 # RelayFlow
 
+[English](README_EN.md) | [中文](README.md)
+
 RelayFlow is a reliable asynchronous relay layer for long-running Agent tasks. It wraps low-concurrency, long-running, and unstable Agent services into an async task flow that is queueable, retryable, queryable, and observable.
 
 Its core goal is to decouple frontend connection concurrency from backend Agent execution concurrency. The Gateway accepts high-concurrency HTTP/SSE requests and quickly enqueues tasks, while Workers consume tasks with a controlled concurrency limit and invoke downstream Agent services.
