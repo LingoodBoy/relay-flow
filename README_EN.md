@@ -17,7 +17,7 @@ Its core goal is to decouple frontend connection concurrency from backend Agent 
 
 ## Architecture
 
-![RelayFlow architecture](pics/architecture.png)
+<img src="pics/architecture.png" alt="RelayFlow architecture" width="820">
 
 ## Tech Stack
 
@@ -103,25 +103,25 @@ Under a `2C2G` resource limit, RelayFlow was load-tested with `15,500` simulated
 
 Go memory stayed stable during the test, with no continuous growth or abnormal GC pressure.
 
-![Go memory](pics/memory.png)
+<img src="pics/memory.png" alt="Go memory" width="760">
 
 ### Queue Backlog
 
 RabbitMQ backlog stayed controllable while Workers consumed tasks at the configured concurrency, then gradually drained as tasks completed.
 
-![RabbitMQ queue](pics/mq.png)
+<img src="pics/mq.png" alt="RabbitMQ queue" width="760">
 
 ### SSE Connections and Completed Runs
 
 SSE connections increased as users were spawned and were released normally after task completion. Completed runs grew steadily.
 
-![SSE connections and completed runs](pics/run_total.png)
+<img src="pics/run_total.png" alt="SSE connections and completed runs" width="760">
 
 ### Worker Concurrency
 
 Worker running tasks remained stable around the configured `1000` concurrency limit, keeping backend Agent pressure within the expected range.
 
-![Worker concurrency](pics/workers.png)
+<img src="pics/workers.png" alt="Worker concurrency" width="760">
 
 ## Notes
 
