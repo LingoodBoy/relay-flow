@@ -17,6 +17,8 @@ RelayFlow 是一个面向长耗时 Agent 任务的可靠异步中继层，用来
 
 ## Architecture
 
+![RelayFlow architecture](pics/architecture.png)
+
 ```text
 Client
   | POST /v1/runs
