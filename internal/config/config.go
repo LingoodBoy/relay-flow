@@ -9,32 +9,34 @@ import (
 
 const (
 	// 默认值面向本地开发；Docker Compose 会用服务名覆盖这些地址。
-	defaultRabbitMQURL        = "amqp://guest:guest@localhost:5672/"
-	defaultRedisAddr          = "localhost:6379"
-	defaultAgentHTTPURL       = "http://localhost:8000"
-	defaultGatewayAddr        = ":8080"
-	defaultWorkerMetricsAddr  = ":9091"
-	defaultAgentTimeoutSecond = 0
-	defaultWorkerConcurrency  = 20
-	defaultMaxAttempts        = 3
-	defaultLogLevel           = "info"
-	defaultLogSampleRate      = 0.01
-	defaultSlowRequestMS      = 300000
+	defaultRabbitMQURL          = "amqp://guest:guest@localhost:5672/"
+	defaultRedisAddr            = "localhost:6379"
+	defaultAgentHTTPURL         = "http://localhost:8000"
+	defaultGatewayAddr          = ":8080"
+	defaultWorkerMetricsAddr    = ":9091"
+	defaultProcessorMetricsAddr = ":9092"
+	defaultAgentTimeoutSecond   = 0
+	defaultWorkerConcurrency    = 20
+	defaultMaxAttempts          = 3
+	defaultLogLevel             = "info"
+	defaultLogSampleRate        = 0.01
+	defaultSlowRequestMS        = 300000
 )
 
 // Config 是 Gateway 和 Worker 共享的基础运行时配置。
 type Config struct {
-	RabbitMQURL       string
-	RedisAddr         string
-	AgentURL          string
-	GatewayAddr       string
-	WorkerMetricsAddr string
-	AgentTimeout      time.Duration
-	WorkerConcurrency int
-	MaxAttempts       int
-	LogLevel          string
-	LogSampleRate     float64
-	SlowRequestMS     int
+	RabbitMQURL          string
+	RedisAddr            string
+	AgentURL             string
+	GatewayAddr          string
+	WorkerMetricsAddr    string
+	ProcessorMetricsAddr string
+	AgentTimeout         time.Duration
+	WorkerConcurrency    int
+	MaxAttempts          int
+	LogLevel             string
+	LogSampleRate        float64
+	SlowRequestMS        int
 }
 
 // Load 从环境变量加载配置；未设置时使用本地开发默认值。
@@ -61,17 +63,18 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		RabbitMQURL:       getEnv("RELAYFLOW_RABBITMQ_URL", defaultRabbitMQURL),
-		RedisAddr:         getEnv("RELAYFLOW_REDIS_ADDR", defaultRedisAddr),
-		AgentURL:          getEnv("RELAYFLOW_AGENT_URL", defaultAgentHTTPURL),
-		GatewayAddr:       getEnv("RELAYFLOW_GATEWAY_ADDR", defaultGatewayAddr),
-		WorkerMetricsAddr: getEnv("RELAYFLOW_WORKER_METRICS_ADDR", defaultWorkerMetricsAddr),
-		AgentTimeout:      time.Duration(agentTimeoutSeconds) * time.Second,
-		WorkerConcurrency: workerConcurrency,
-		MaxAttempts:       maxAttempts,
-		LogLevel:          getEnv("RELAYFLOW_LOG_LEVEL", defaultLogLevel),
-		LogSampleRate:     logSampleRate,
-		SlowRequestMS:     slowRequestMS,
+		RabbitMQURL:          getEnv("RELAYFLOW_RABBITMQ_URL", defaultRabbitMQURL),
+		RedisAddr:            getEnv("RELAYFLOW_REDIS_ADDR", defaultRedisAddr),
+		AgentURL:             getEnv("RELAYFLOW_AGENT_URL", defaultAgentHTTPURL),
+		GatewayAddr:          getEnv("RELAYFLOW_GATEWAY_ADDR", defaultGatewayAddr),
+		WorkerMetricsAddr:    getEnv("RELAYFLOW_WORKER_METRICS_ADDR", defaultWorkerMetricsAddr),
+		ProcessorMetricsAddr: getEnv("RELAYFLOW_PROCESSOR_METRICS_ADDR", defaultProcessorMetricsAddr),
+		AgentTimeout:         time.Duration(agentTimeoutSeconds) * time.Second,
+		WorkerConcurrency:    workerConcurrency,
+		MaxAttempts:          maxAttempts,
+		LogLevel:             getEnv("RELAYFLOW_LOG_LEVEL", defaultLogLevel),
+		LogSampleRate:        logSampleRate,
+		SlowRequestMS:        slowRequestMS,
 	}, nil
 }
 

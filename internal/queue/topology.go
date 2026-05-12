@@ -61,6 +61,16 @@ func DeclareTaskTopology(rabbitMQURL string) error {
 // DeclareEventTopology 声明 RelayFlow 的事件交换机和持久化队列。
 // 事件使用 topic exchange，后续可按 run_id 精确订阅，也可按通配符消费全部事件。
 func DeclareEventTopology(rabbitMQURL string) error {
+	return declareEventResources(rabbitMQURL, true)
+}
+
+// DeclareEventExchange 声明事件交换机，供只发布或只广播消费事件的进程使用。
+func DeclareEventExchange(rabbitMQURL string) error {
+	return declareEventResources(rabbitMQURL, false)
+}
+
+// declareEventResources 按进程职责声明事件交换机以及可选的持久化队列。
+func declareEventResources(rabbitMQURL string, includePersistQueue bool) error {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return fmt.Errorf("dial rabbitmq: %w", err)
@@ -73,15 +83,24 @@ func DeclareEventTopology(rabbitMQURL string) error {
 	}
 	defer ch.Close()
 
-	if err := declareEventTopologyWithChannel(ch); err != nil {
+	if err := declareEventExchangeWithChannel(ch); err != nil {
 		return err
 	}
 
-	slog.Info("rabbitmq event topology declared",
-		"exchange", EventExchange,
-		"persist_queue", EventPersistQueue,
-		"routing_key", EventAllRunRoutingKey,
-	)
+	if includePersistQueue {
+		if err := declareEventPersistQueueWithChannel(ch); err != nil {
+			return err
+		}
+
+		slog.Info("rabbitmq event topology declared",
+			"exchange", EventExchange,
+			"persist_queue", EventPersistQueue,
+			"routing_key", EventAllRunRoutingKey,
+		)
+		return nil
+	}
+
+	slog.Info("rabbitmq event exchange declared", "exchange", EventExchange)
 	return nil
 }
 
@@ -201,18 +220,14 @@ func declareTaskTopologyWithChannel(ch *amqp.Channel) error {
 
 // declareEventTopologyWithChannel 在已有 AMQP channel 上声明事件拓扑。
 func declareEventTopologyWithChannel(ch *amqp.Channel) error {
-	if err := ch.ExchangeDeclare(
-		EventExchange,
-		"topic",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	); err != nil {
-		return fmt.Errorf("declare event exchange: %w", err)
+	if err := declareEventExchangeWithChannel(ch); err != nil {
+		return err
 	}
+	return declareEventPersistQueueWithChannel(ch)
+}
 
+// declareEventPersistQueueWithChannel 在已有 AMQP channel 上声明事件持久化队列。
+func declareEventPersistQueueWithChannel(ch *amqp.Channel) error {
 	if _, err := ch.QueueDeclare(
 		EventPersistQueue,
 		true,
@@ -237,6 +252,22 @@ func declareEventTopologyWithChannel(ch *amqp.Channel) error {
 		return fmt.Errorf("bind event persist queue: %w", err)
 	}
 
+	return nil
+}
+
+// declareEventExchangeWithChannel 在已有 AMQP channel 上声明事件交换机。
+func declareEventExchangeWithChannel(ch *amqp.Channel) error {
+	if err := ch.ExchangeDeclare(
+		EventExchange,
+		"topic",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return fmt.Errorf("declare event exchange: %w", err)
+	}
 	return nil
 }
 

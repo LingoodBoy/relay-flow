@@ -59,8 +59,8 @@ func main() {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
 		os.Exit(1)
 	}
-	if err := queue.DeclareEventTopology(cfg.RabbitMQURL); err != nil {
-		slog.Error("declare rabbitmq event topology failed", "err", err)
+	if err := queue.DeclareEventExchange(cfg.RabbitMQURL); err != nil {
+		slog.Error("declare rabbitmq event exchange failed", "err", err)
 		os.Exit(1)
 	}
 
@@ -75,15 +75,15 @@ func main() {
 	}
 
 	sseHub := gatewayhttp.NewSSEHub()
-	eventConsumer, err := queue.NewEventConsumer(cfg.RabbitMQURL, runStore, sseHub)
+	eventConsumer, err := queue.NewBroadcastEventConsumer(cfg.RabbitMQURL, sseHub)
 	if err != nil {
-		slog.Error("create event consumer failed", "err", err)
+		slog.Error("create broadcast event consumer failed", "err", err)
 		os.Exit(1)
 	}
 	defer eventConsumer.Close()
 	go func() {
 		if err := eventConsumer.Run(context.Background()); err != nil {
-			slog.Error("event consumer stopped", "err", err)
+			slog.Error("broadcast event consumer stopped", "err", err)
 		}
 	}()
 

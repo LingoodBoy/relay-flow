@@ -4,7 +4,7 @@
 
 RelayFlow is a reliable asynchronous relay layer for long-running Agent tasks. It wraps low-concurrency, long-running, and unstable Agent services into an async task flow that is queueable, retryable, queryable, and observable.
 
-Its core goal is to decouple frontend connection concurrency from backend Agent execution concurrency. The Gateway accepts high-concurrency HTTP/SSE requests and quickly enqueues tasks, while Workers consume tasks with a controlled concurrency limit and invoke downstream Agent services.
+Its core goal is to decouple frontend connection concurrency from backend Agent execution concurrency. The Relay API accepts high-concurrency HTTP/SSE requests and quickly enqueues tasks, while Workers consume tasks with a controlled concurrency limit and invoke downstream Agent services.
 
 ## Features
 
@@ -13,6 +13,8 @@ Its core goal is to decouple frontend connection concurrency from backend Agent 
 - Traffic buffering with RabbitMQ task queues
 - Worker-side concurrency control for protecting low-throughput Agent services
 - Redis-backed run status, result, and event history storage
+- EventProcessor for consuming the durable event queue and updating Redis state
+- Multi-instance SSE delivery through one exclusive broadcast queue per Relay API instance
 - Timeout handling, retry, and dead-letter queue support
 - Standardized Agent stage events through a RunEvent model
 - Prometheus metrics and OpenTelemetry distributed tracing
@@ -20,6 +22,8 @@ Its core goal is to decouple frontend connection concurrency from backend Agent 
 ## Architecture
 
 <img src="pics/architecture.png" alt="RelayFlow architecture" width="820">
+
+Workers publish standardized RunEvents to a RabbitMQ event exchange. EventProcessor consumes the durable persist queue and updates Redis state, while each Relay API instance owns an exclusive temporary broadcast queue and only pushes matching events to its local SSEHub. This allows Relay API instances to scale horizontally without relying on load-balancer sticky sessions for real-time SSE delivery.
 
 ## Tech Stack
 
@@ -45,7 +49,7 @@ Start the demo Agent service:
 docker compose -f docker-compose.agent.yml up -d --build
 ```
 
-Start Gateway and Worker:
+Start Relay API, Worker, and EventProcessor:
 
 ```bash
 docker compose -f docker-compose.relay.yml up -d --build
@@ -129,3 +133,4 @@ Worker running tasks remained stable around the configured `1000` concurrency li
 
 - RelayFlow does not manage Agent business logic, conversation memory, or tool invocation. It only provides the reliability layer around async task execution.
 - RabbitMQ is used for task messages and low-frequency semantic stage events, not for token-level streaming.
+- Relay API handles HTTP/SSE ingress, while EventProcessor handles event persistence. They can be scaled independently.

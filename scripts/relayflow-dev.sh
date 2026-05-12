@@ -19,7 +19,7 @@ usage() {
 Usage: scripts/relayflow-dev.sh <command>
 
 Commands:
-  up       Start infra, agent, gateway and worker.
+  up       Start infra, agent, Relay API, Worker and EventProcessor.
   down     Stop and remove containers, keep volumes.
   restart  Recreate all services, keep volumes.
   clean    Purge RabbitMQ queues and Redis current DB, keep containers/volumes.
@@ -104,10 +104,11 @@ start_all() {
   docker compose "${AGENT_COMPOSE[@]}" up -d --build
   wait_healthy relayflow-fastapi-agent-1 180
 
-  echo "Starting gateway and worker..."
+  echo "Starting relay services..."
   docker compose "${RELAY_COMPOSE[@]}" up -d --build
   ensure_running relayflow-gateway-1 60
   ensure_running relayflow-worker-1 60
+  ensure_running relayflow-event-processor-1 60
 }
 
 purge_queue() {

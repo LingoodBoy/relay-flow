@@ -13,3 +13,9 @@ scrape_configs:
     static_configs:
       - targets:
           - worker:9091
+
+  - job_name: relayflow-event-processor
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - event-processor:9092

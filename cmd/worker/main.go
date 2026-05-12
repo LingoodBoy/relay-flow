@@ -62,8 +62,8 @@ func main() {
 		slog.Error("declare rabbitmq task topology failed", "err", err)
 		os.Exit(1)
 	}
-	if err := queue.DeclareEventTopology(cfg.RabbitMQURL); err != nil {
-		slog.Error("declare rabbitmq event topology failed", "err", err)
+	if err := queue.DeclareEventExchange(cfg.RabbitMQURL); err != nil {
+		slog.Error("declare rabbitmq event exchange failed", "err", err)
 		os.Exit(1)
 	}
 
